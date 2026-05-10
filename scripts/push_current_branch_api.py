@@ -56,6 +56,16 @@ def ref_exists(owner: str, repo: str, branch: str) -> bool:
         raise
 
 
+def ref_sha(owner: str, repo: str, branch: str) -> str | None:
+    try:
+        response = request_json("GET", f"https://api.github.com/repos/{owner}/{repo}/git/ref/heads/{branch}")
+    except RuntimeError as exc:
+        if "failed: 404" in str(exc):
+            return None
+        raise
+    return str(response["object"]["sha"])
+
+
 def main() -> int:
     owner_repo = sys.argv[1] if len(sys.argv) > 1 else "shaluoyan523/egtc-paw-runtime-stagea"
     branch = sys.argv[2] if len(sys.argv) > 2 else git_text("branch", "--show-current")
@@ -78,12 +88,16 @@ def main() -> int:
         {"tree": tree_entries},
     )["sha"]
     message = git_text("log", "-1", "--pretty=%s")
+    parent_sha = ref_sha(owner, repo, branch)
+    commit_payload = {"message": message, "tree": tree_sha}
+    if parent_sha:
+        commit_payload["parents"] = [parent_sha]
     commit_sha = request_json(
         "POST",
         f"https://api.github.com/repos/{owner}/{repo}/git/commits",
-        {"message": message, "tree": tree_sha},
+        commit_payload,
     )["sha"]
-    if ref_exists(owner, repo, branch):
+    if parent_sha:
         request_json(
             "PATCH",
             f"https://api.github.com/repos/{owner}/{repo}/git/refs/heads/{branch}",

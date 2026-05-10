@@ -99,6 +99,14 @@ python3 examples/phasec_all_codex_complex_demo.py --split train --scan-limit 120
 
 This launches the Director Agent, one Codex worker per Director-created node, and the Codex overlooker through `CodexExecWrapper`. The report verifies that every agent session produced Phase C sandbox events and a resource report.
 
+Run the Phase D graph runtime demo:
+
+```bash
+python3 examples/phase_d_graph_runtime_demo.py
+```
+
+Phase D adds a DAG scheduler with parallel read-only workers, a single-writer lock, checkpoint/resume, retry budget, and livelock/deadlock detection. The demo pauses after two accepted diagnosis nodes, resumes from checkpoint, serializes competing writer nodes, retries one flaky verification node, and finishes accepted.
+
 Phase B adds:
 
 - `DirectorAgentV1`: staged central planner named Director Agent.
@@ -107,6 +115,14 @@ Phase B adds:
 - `NodeInstantiation`: concrete `NodeCapsule` generation.
 - `PermissionGroundingReport`: sandbox profile grounded by `RepoPolicy`.
 - `WorkflowCompiler`: structured validation for node ids, skeleton coverage, commands, paths, network, and acceptance criteria.
+
+Phase D adds:
+
+- `GraphRuntime`: multi-node DAG scheduler layered on the Stage A/C execution chain.
+- `GraphRunSpec`: graph nodes, edges, parallelism, retry, and overlooker-mode policy.
+- Checkpoint/resume under `phased_graph_data/checkpoints`.
+- Parallel read-only execution with single-writer scheduling.
+- Retry budget plus repeated-failure livelock guard.
 
 Publish as a private GitHub repository:
 
