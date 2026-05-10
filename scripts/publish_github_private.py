@@ -4,6 +4,7 @@ import argparse
 import base64
 import json
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -46,6 +47,23 @@ def request_json(
         raise RuntimeError(f"GitHub API {method} {url} failed: {exc.code} {body}") from exc
 
 
+def get_token() -> str | None:
+    token = (
+        os.environ.get("GITHUB_TOKEN")
+        or os.environ.get("GH_TOKEN")
+        or os.environ.get("GITHUB_PAT")
+        or os.environ.get("GH_PAT")
+    )
+    if token:
+        return token
+    try:
+        return subprocess.check_output(
+            ["gh", "auth", "token"], text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except Exception:
+        return None
+
+
 def iter_files(root: Path) -> list[Path]:
     files: list[Path] = []
     for path in root.rglob("*"):
@@ -57,7 +75,36 @@ def iter_files(root: Path) -> list[Path]:
     return sorted(files)
 
 
-def create_repo(token: str, repo_name: str, description: str, org: str | None) -> dict[str, object]:
+def get_authenticated_user(token: str) -> str:
+    response = request_json("GET", "https://api.github.com/user", token)
+    return str(response["login"])
+
+
+def get_repo(token: str, owner: str, repo_name: str) -> dict[str, object] | None:
+    try:
+        return request_json(
+            "GET", f"https://api.github.com/repos/{owner}/{repo_name}", token
+        )
+    except RuntimeError as exc:
+        if "failed: 404" in str(exc):
+            return None
+        raise
+
+
+def repo_is_empty(token: str, owner: str, repo_name: str) -> bool:
+    branches = request_json(
+        "GET", f"https://api.github.com/repos/{owner}/{repo_name}/branches", token
+    )
+    return isinstance(branches, list) and not branches
+
+
+def create_repo(
+    token: str,
+    repo_name: str,
+    description: str,
+    org: str | None,
+    private: bool,
+) -> dict[str, object]:
     endpoint = (
         f"https://api.github.com/orgs/{org}/repos"
         if org
@@ -70,7 +117,7 @@ def create_repo(token: str, repo_name: str, description: str, org: str | None) -
         {
             "name": repo_name,
             "description": description,
-            "private": True,
+            "private": private,
             "auto_init": False,
         },
     )
@@ -148,6 +195,9 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", default="egtc-paw-runtime-stagea")
     parser.add_argument("--org", default=None)
+    visibility = parser.add_mutually_exclusive_group()
+    visibility.add_argument("--private", action="store_true", help="Create a private repository.")
+    visibility.add_argument("--public", action="store_true", help="Create a public repository.")
     parser.add_argument("--branch", default="main")
     parser.add_argument("--message", default="Initial Stage A prototype")
     parser.add_argument(
@@ -157,22 +207,28 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    token = (
-        os.environ.get("GITHUB_TOKEN")
-        or os.environ.get("GH_TOKEN")
-        or os.environ.get("GITHUB_PAT")
-        or os.environ.get("GH_PAT")
-    )
+    private = not args.public
+    token = get_token()
     root = Path(__file__).resolve().parents[1]
     files = iter_files(root)
     if args.dry_run:
         print(json.dumps({"root": str(root), "files": [str(p.relative_to(root)) for p in files]}, indent=2))
         return 0
     if not token:
-        print("Set GITHUB_TOKEN or GH_TOKEN with repo scope before publishing.", file=sys.stderr)
+        print("Log in with gh or set GITHUB_TOKEN/GH_TOKEN with repo scope before publishing.", file=sys.stderr)
         return 2
 
-    repo_info = create_repo(token, args.repo, args.description, args.org)
+    owner_hint = args.org or get_authenticated_user(token)
+    repo_info = get_repo(token, owner_hint, args.repo)
+    if repo_info is None:
+        repo_info = create_repo(token, args.repo, args.description, args.org, private)
+    elif not repo_is_empty(token, owner_hint, args.repo):
+        print(
+            f"Repository {owner_hint}/{args.repo} already exists and is not empty.",
+            file=sys.stderr,
+        )
+        return 3
+
     owner = str(repo_info["owner"]["login"])  # type: ignore[index]
     repo_name = str(repo_info["name"])
     tree_entries: list[dict[str, str]] = []
