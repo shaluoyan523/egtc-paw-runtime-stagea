@@ -1,0 +1,21 @@
+[project]
+name = "egtc-paw-runtime-stagea"
+version = "0.1.0"
+description = "Phase A prototype for EGTC-PAW Runtime v4 with Codex worker and Codex Overlooker evidence gating."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+modelscope = [
+  "modelscope",
+  "datasets",
+  "pandas",
+  "pyarrow",
+  "addict",
+  "simplejson",
+  "sortedcontainers",
+]
+
+[tool.setuptools]
+packages = ["egtc_runtime_stagea"]
