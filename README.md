@@ -91,6 +91,14 @@ python3 examples/phasec_sandbox_demo.py
 
 Phase C adds Codex-native sandbox mapping, `network:none` sandbox events, resource limits, `ResourceReport`, and evidence artifacts for sandbox event streams.
 
+Run Phase C against a complex SWE-bench case with all roles performed by Codex:
+
+```bash
+python3 examples/phasec_all_codex_complex_demo.py --split train --scan-limit 120
+```
+
+This launches the Director Agent, one Codex worker per Director-created node, and the Codex overlooker through `CodexExecWrapper`. The report verifies that every agent session produced Phase C sandbox events and a resource report.
+
 Phase B adds:
 
 - `DirectorAgentV1`: staged central planner named Director Agent.

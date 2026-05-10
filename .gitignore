@@ -15,6 +15,7 @@ phaseb_complex_reports/
 phaseb_codex_director_reports/
 phaseb_all_codex_reports/
 phasec_sandbox_data/
+phasec_complex_reports/
 
 # Local credentials/configuration must not be committed.
 .env
