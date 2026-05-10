@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -191,6 +192,51 @@ def set_default_branch(token: str, owner: str, repo: str, branch: str) -> None:
     )
 
 
+def upload_file_contents_api(
+    token: str,
+    owner: str,
+    repo: str,
+    rel_path: str,
+    content: bytes,
+    branch: str,
+    message: str,
+) -> None:
+    encoded_path = "/".join(urllib.parse.quote(part) for part in rel_path.split("/"))
+    request_json(
+        "PUT",
+        f"https://api.github.com/repos/{owner}/{repo}/contents/{encoded_path}",
+        token,
+        {
+            "message": message,
+            "content": base64.b64encode(content).decode("ascii"),
+            "branch": branch,
+        },
+    )
+
+
+def upload_files_contents_api(
+    token: str,
+    owner: str,
+    repo: str,
+    files: list[Path],
+    root: Path,
+    branch: str,
+    message: str,
+) -> None:
+    for path in files:
+        rel_path = path.relative_to(root).as_posix()
+        upload_file_contents_api(
+            token,
+            owner,
+            repo,
+            rel_path,
+            path.read_bytes(),
+            branch,
+            f"{message}: {rel_path}",
+        )
+        print(f"uploaded {rel_path}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", default="egtc-paw-runtime-stagea")
@@ -231,18 +277,27 @@ def main() -> int:
 
     owner = str(repo_info["owner"]["login"])  # type: ignore[index]
     repo_name = str(repo_info["name"])
-    tree_entries: list[dict[str, str]] = []
-    for path in files:
-        rel_path = path.relative_to(root).as_posix()
-        blob_sha = create_blob(token, owner, repo_name, path.read_bytes())
-        tree_entries.append(
-            {"path": rel_path, "mode": "100644", "type": "blob", "sha": blob_sha}
+    try:
+        tree_entries: list[dict[str, str]] = []
+        for path in files:
+            rel_path = path.relative_to(root).as_posix()
+            blob_sha = create_blob(token, owner, repo_name, path.read_bytes())
+            tree_entries.append(
+                {"path": rel_path, "mode": "100644", "type": "blob", "sha": blob_sha}
+            )
+            print(f"staged {rel_path}")
+        tree_sha = create_tree(token, owner, repo_name, tree_entries)
+        commit_sha = create_commit(token, owner, repo_name, args.message, tree_sha)
+        create_branch_ref(token, owner, repo_name, args.branch, commit_sha)
+        set_default_branch(token, owner, repo_name, args.branch)
+    except RuntimeError as exc:
+        if "Git Repository is empty" not in str(exc):
+            raise
+        print("repository is empty; falling back to Contents API uploads")
+        upload_files_contents_api(
+            token, owner, repo_name, files, root, args.branch, args.message
         )
-        print(f"staged {rel_path}")
-    tree_sha = create_tree(token, owner, repo_name, tree_entries)
-    commit_sha = create_commit(token, owner, repo_name, args.message, tree_sha)
-    create_branch_ref(token, owner, repo_name, args.branch, commit_sha)
-    set_default_branch(token, owner, repo_name, args.branch)
+        set_default_branch(token, owner, repo_name, args.branch)
     print(repo_info.get("html_url"))
     return 0
 
