@@ -45,7 +45,7 @@ class StageARuntime:
 
         before = snapshot_workspace(workspace)
         self._record(run_id, node.node_id, "NodeStateChanged", {"state": NodeState.RUNNING})
-        worker_result = self.wrapper.run(node, workspace)
+        worker_result = self.wrapper.run(node, workspace, run_id=run_id)
         self._record(
             run_id,
             node.node_id,

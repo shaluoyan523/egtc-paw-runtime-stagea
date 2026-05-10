@@ -56,6 +56,9 @@ class SandboxProfile:
     allowed_write_paths: list[str]
     allowed_commands: list[list[str]]
     justification: str
+    backend: str = "codex_native"
+    sandbox_mode: str = "workspace_write"
+    resource_limits: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

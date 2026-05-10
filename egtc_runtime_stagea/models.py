@@ -50,6 +50,7 @@ class NodeCapsule:
     prompt: str | None = None
     codex_binary: str | None = None
     codex_sandbox: str = "workspace-write"
+    sandbox_profile: dict[str, Any] | None = None
 
 
 @dataclass
@@ -61,6 +62,8 @@ class WorkerResult:
     stdout_ref: ArtifactRef
     stderr_ref: ArtifactRef
     parsed_events: list[dict[str, Any]]
+    sandbox_event_refs: list[ArtifactRef] = field(default_factory=list)
+    resource_report_ref: ArtifactRef | None = None
 
 
 @dataclass

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import resource
 import shutil
 import subprocess
+import time
 import uuid
 from pathlib import Path
 
@@ -11,6 +13,7 @@ from .artifact_store import ArtifactStore
 from typing import Any
 
 from .models import ActorIdentity, CapabilityToken, NodeCapsule, WorkerResult
+from .sandbox import SandboxRuntime
 
 
 class CodexExecWrapper:
@@ -29,21 +32,58 @@ class CodexExecWrapper:
         self.artifact_store = artifact_store
         self.actor = actor
         self.token = token
+        self.sandbox = SandboxRuntime()
 
-    def run(self, node: NodeCapsule, cwd: Path, role: str = "worker") -> WorkerResult:
+    def run(
+        self,
+        node: NodeCapsule,
+        cwd: Path,
+        role: str = "worker",
+        run_id: str | None = None,
+    ) -> WorkerResult:
+        cwd.mkdir(parents=True, exist_ok=True)
         agent_id = f"{role}-{uuid.uuid4().hex[:12]}"
-        command = self._build_command(node, cwd)
-        completed = subprocess.run(
-            command,
-            cwd=cwd,
-            text=True,
-            capture_output=True,
-            stdin=subprocess.DEVNULL,
-            check=False,
+        run_id = run_id or f"run-{uuid.uuid4().hex[:12]}"
+        spec = self.sandbox.prepare(node)
+        command = self._build_command(node, cwd, spec.codex_sandbox)
+        start_time = time.time()
+        usage_before = resource.getrusage(resource.RUSAGE_CHILDREN)
+        timed_out = False
+        sandbox_events = self.sandbox.start_events(run_id, node, agent_id, spec, cwd)
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=cwd,
+                text=True,
+                capture_output=True,
+                stdin=subprocess.DEVNULL,
+                check=False,
+                timeout=spec.resource_limits.wall_time_sec,
+            )
+            exit_code = completed.returncode
+            stdout = completed.stdout
+            stderr = completed.stderr
+        except subprocess.TimeoutExpired as exc:
+            timed_out = True
+            exit_code = 124
+            stdout = exc.stdout if isinstance(exc.stdout, str) else ""
+            stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+            stderr += f"\nSandbox timeout after {spec.resource_limits.wall_time_sec}s\n"
+        usage_after = resource.getrusage(resource.RUSAGE_CHILDREN)
+        sandbox_events.extend(
+            self.sandbox.finish_events(run_id, node, agent_id, exit_code, timed_out)
+        )
+        resource_report = self.sandbox.report(
+            node,
+            start_time,
+            usage_before,
+            usage_after,
+            timed_out,
+            command_count=spec.command_count,
         )
         parsed_events: list[dict[str, Any]] = []
         event_lines: list[str] = []
-        for line in completed.stdout.splitlines():
+        for line in stdout.splitlines():
             try:
                 event = json.loads(line)
             except json.JSONDecodeError:
@@ -66,30 +106,48 @@ class CodexExecWrapper:
             self.token,
         )
         stdout_ref = self.artifact_store.put_bytes(
-            completed.stdout.encode("utf-8"),
+            stdout.encode("utf-8"),
             "text/plain",
             {"kind": f"{role}_stdout", **metadata},
             self.actor,
             self.token,
         )
         stderr_ref = self.artifact_store.put_bytes(
-            completed.stderr.encode("utf-8"),
+            stderr.encode("utf-8"),
             "text/plain",
             {"kind": f"{role}_stderr", **metadata},
+            self.actor,
+            self.token,
+        )
+        sandbox_event_ref = self.artifact_store.put_bytes(
+            (
+                "\n".join(json.dumps(event.__dict__, sort_keys=True) for event in sandbox_events)
+                + "\n"
+            ).encode("utf-8"),
+            "application/jsonl",
+            {"kind": f"{role}_sandbox_events", **metadata},
+            self.actor,
+            self.token,
+        )
+        resource_report_ref = self.artifact_store.put_json(
+            resource_report,
+            {"kind": f"{role}_resource_report", **metadata},
             self.actor,
             self.token,
         )
         return WorkerResult(
             worker_id=agent_id,
             status="submitted",
-            exit_code=completed.returncode,
+            exit_code=exit_code,
             event_refs=[event_ref],
             stdout_ref=stdout_ref,
             stderr_ref=stderr_ref,
             parsed_events=parsed_events,
+            sandbox_event_refs=[sandbox_event_ref],
+            resource_report_ref=resource_report_ref,
         )
 
-    def _build_command(self, node: NodeCapsule, cwd: Path) -> list[str]:
+    def _build_command(self, node: NodeCapsule, cwd: Path, codex_sandbox: str) -> list[str]:
         if node.executor_kind == "subprocess":
             if not node.command:
                 raise ValueError("subprocess node requires command")
@@ -109,7 +167,7 @@ class CodexExecWrapper:
             "-C",
             str(cwd),
             "-s",
-            node.codex_sandbox,
+            codex_sandbox,
             prompt,
         ]
 

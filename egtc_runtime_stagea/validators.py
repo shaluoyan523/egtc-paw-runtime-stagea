@@ -15,6 +15,8 @@ class DeterministicValidator:
             self._artifacts_verify(evidence),
             self._test_report_passes(evidence),
             self._diff_collected(evidence),
+            self._sandbox_events_collected(evidence),
+            self._resource_report_collected(evidence),
         ]
 
     def _evidence_ref_present(self, evidence: EvidenceBundle) -> ValidatorReport:
@@ -93,5 +95,45 @@ class DeterministicValidator:
             validator_id="diff_collected",
             passed=passed,
             findings=[] if passed else ["No workspace diff artifact was collected."],
+            evidence_ref=evidence.evidence_ref.uri,
+        )
+
+    def _sandbox_events_collected(self, evidence: EvidenceBundle) -> ValidatorReport:
+        ref = evidence.artifacts.get("sandbox_events")
+        passed = bool(ref and "sandbox_events" in ref.metadata.get("kind", ""))
+        return ValidatorReport(
+            validator_id="sandbox_events_collected",
+            passed=passed,
+            findings=[] if passed else ["No sandbox event stream artifact was collected."],
+            evidence_ref=evidence.evidence_ref.uri,
+        )
+
+    def _resource_report_collected(self, evidence: EvidenceBundle) -> ValidatorReport:
+        ref = evidence.artifacts.get("resource_report")
+        findings: list[str] = []
+        passed = False
+        if not ref or "resource_report" not in ref.metadata.get("kind", ""):
+            findings.append("No resource report artifact was collected.")
+        else:
+            try:
+                report = self.artifact_store.get_json(
+                    ref,
+                    self.artifact_store.identity.actor("validator-stagea", "validator"),
+                    self.artifact_store.identity.issue_token(
+                        self.artifact_store.identity.actor("validator-stagea", "validator"),
+                        ["artifact:read"],
+                    ),
+                )
+            except Exception as exc:
+                findings.append(f"Unable to read resource report artifact: {exc}")
+            else:
+                required = {"wall_time_sec", "cpu_time_sec", "command_count", "timeout_killed"}
+                missing = sorted(required - set(report))
+                passed = not missing
+                findings.extend(f"Resource report missing field: {field}" for field in missing)
+        return ValidatorReport(
+            validator_id="resource_report_collected",
+            passed=passed,
+            findings=[] if passed else findings,
             evidence_ref=evidence.evidence_ref.uri,
         )

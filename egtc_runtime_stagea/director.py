@@ -134,11 +134,13 @@ class DirectorAgentV1:
                 ],
                 executor_kind="subprocess",
             )
+            grounding = grounder.derive(node, skeleton_node.phase)
+            node.sandbox_profile = grounding.sandbox_profile.__dict__
             instantiations.append(
                 NodeInstantiation(
                     node=node,
                     skeleton_node_id=skeleton_node.node_id,
-                    permission_grounding=grounder.derive(node, skeleton_node.phase),
+                    permission_grounding=grounding,
                 )
             )
         return instantiations

@@ -46,6 +46,8 @@ class EvidenceCollector:
             "log": worker_result.stdout_ref,
             "stderr": worker_result.stderr_ref,
             "worker_events": worker_result.event_refs[0],
+            "sandbox_events": worker_result.sandbox_event_refs[0],
+            "resource_report": worker_result.resource_report_ref,
             "diff": self.artifact_store.put_json(
                 workspace_diff,
                 {"kind": "workspace_diff", "node_id": node.node_id},

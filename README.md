@@ -59,6 +59,38 @@ python3 examples/phaseb_compiler_negative_demo.py
 
 This intentionally asks for ungrounded network access and a sensitive write path; the compiler should reject it.
 
+Run Phase B against complex SWE-bench cases:
+
+```bash
+python3 examples/phaseb_swe_complex_demo.py --split train --scan-limit 500 --count 3
+```
+
+The selector scores cases by patch size, test patch size, issue length, `FAIL_TO_PASS` count, and preferred large Python repositories.
+
+Run Phase B with a real Codex Director Agent session:
+
+```bash
+python3 examples/phaseb_codex_director_complex_demo.py --split train --scan-limit 120
+```
+
+This creates a Director workspace, launches `codex exec --json`, requires `director_output.json`, and validates the Director's structured output.
+
+Run Phase B with all agent roles performed by Codex:
+
+```bash
+python3 examples/phaseb_all_codex_agents_complex_demo.py --split train --scan-limit 120
+```
+
+This launches Codex for the Director Agent, one Codex worker per Director-created node, and a Codex Overlooker.
+
+Run the Phase C sandbox/resource demo:
+
+```bash
+python3 examples/phasec_sandbox_demo.py
+```
+
+Phase C adds Codex-native sandbox mapping, `network:none` sandbox events, resource limits, `ResourceReport`, and evidence artifacts for sandbox event streams.
+
 Phase B adds:
 
 - `DirectorAgentV1`: staged central planner named Director Agent.
