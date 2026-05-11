@@ -65,17 +65,34 @@ class GraphNodeRecord:
     evidence_ref: str | None = None
     resource_report_ref: str | None = None
     sandbox_events_ref: str | None = None
+    current_workspace: str | None = None
+    accepted_workspace: str | None = None
+    fork_source_node_id: str | None = None
+    fork_source_workspace: str | None = None
+    fork_history: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
 class NodeExecutionResult:
     node_id: str
+    attempt: int
+    workspace: str
     final_state: str
     worker_result: WorkerResult
     evidence: EvidenceBundle
     validator_reports: list[ValidatorReport]
     overlooker_report: OverlookerReport
     workspace_diff: dict[str, list[str]]
+
+
+@dataclass(frozen=True)
+class WorkspaceForkPlan:
+    attempt: int
+    workspace: Path
+    source_node_id: str | None
+    source_workspace: Path | None
+    candidate_node_ids: list[str]
+    reason: str
 
 
 class GraphRuntime:
@@ -181,6 +198,13 @@ class GraphRuntime:
                         break
                     record.status = "WORKER_RUNNING"
                     record.attempts += 1
+                    fork_plan = self._select_fork_plan(
+                        run_id,
+                        nodes[candidate],
+                        record,
+                        records,
+                        spec.overlooker_mode,
+                    )
                     if not record.read_only:
                         active_writer = record.node_id
                         self._record(
@@ -200,6 +224,7 @@ class GraphRuntime:
                         run_id,
                         nodes[candidate],
                         spec.overlooker_mode,
+                        fork_plan,
                     )
                     active[future] = candidate
                     max_observed_parallelism = max(max_observed_parallelism, len(active))
@@ -271,8 +296,9 @@ class GraphRuntime:
         run_id: str,
         node: NodeCapsule,
         overlooker_mode: str,
+        fork_plan: WorkspaceForkPlan,
     ) -> NodeExecutionResult:
-        workspace = self._prepare_workspace(run_id, node)
+        workspace = self._prepare_workspace(node, fork_plan)
         before = snapshot_workspace(workspace)
         worker_result = self.wrapper.run(node, workspace, run_id=run_id)
         self._record(
@@ -315,6 +341,8 @@ class GraphRuntime:
         )
         return NodeExecutionResult(
             node_id=node.node_id,
+            attempt=fork_plan.attempt,
+            workspace=str(workspace),
             final_state=final_state,
             worker_result=worker_result,
             evidence=evidence,
@@ -331,6 +359,7 @@ class GraphRuntime:
     ) -> None:
         record.current_worker_id = result.worker_result.worker_id
         record.final_state = result.final_state
+        record.current_workspace = result.workspace
         record.evidence_ref = result.evidence.evidence_ref.uri
         resource_ref = result.evidence.artifacts.get("resource_report")
         sandbox_ref = result.evidence.artifacts.get("sandbox_events")
@@ -340,6 +369,8 @@ class GraphRuntime:
         if result.final_state == NodeState.NODE_ACCEPTED.value:
             record.status = "NODE_ACCEPTED"
             record.failure_code = None
+            record.workspace = result.workspace
+            record.accepted_workspace = result.workspace
         else:
             record.status = "NODE_REJECTED"
             record.failure_code = self._failure_code(result.worker_result, result.validator_reports)
@@ -441,6 +472,71 @@ class GraphRuntime:
             )
             for node in spec.nodes
         }
+
+    def _select_fork_plan(
+        self,
+        run_id: str,
+        node: NodeCapsule,
+        record: GraphNodeRecord,
+        records: dict[str, GraphNodeRecord],
+        overlooker_mode: str,
+    ) -> WorkspaceForkPlan:
+        candidates = [
+            parent_id
+            for parent_id in record.depends_on
+            if records[parent_id].status == "NODE_ACCEPTED"
+            and records[parent_id].accepted_workspace
+        ]
+        source_node_id: str | None = None
+        source_workspace: Path | None = None
+        if candidates:
+            source_node_id = sorted(candidates)[-1]
+            source_workspace = Path(records[source_node_id].accepted_workspace or "")
+            reason = (
+                "retry_from_accepted_dependency"
+                if record.attempts > 1
+                else "initial_from_accepted_dependency"
+            )
+        elif node.workspace:
+            source_workspace = Path(node.workspace)
+            reason = (
+                "retry_from_initial_workspace"
+                if record.attempts > 1
+                else "initial_from_node_workspace"
+            )
+        else:
+            reason = "retry_from_empty_workspace" if record.attempts > 1 else "initial_empty_workspace"
+
+        if source_workspace is not None and not source_workspace.exists():
+            source_workspace = None
+            source_node_id = None
+            reason = "source_workspace_missing_empty_fallback"
+
+        workspace = self._attempt_workspace(run_id, node.node_id, record.attempts)
+        event = {
+            "node_id": node.node_id,
+            "attempt": record.attempts,
+            "selected_by": f"{overlooker_mode}_overlooker_policy",
+            "source_node_id": source_node_id,
+            "source_workspace": str(source_workspace) if source_workspace else None,
+            "target_workspace": str(workspace),
+            "candidate_node_ids": sorted(candidates),
+            "previous_failure_code": record.failure_code,
+            "reason": reason,
+        }
+        record.current_workspace = str(workspace)
+        record.fork_source_node_id = source_node_id
+        record.fork_source_workspace = str(source_workspace) if source_workspace else None
+        record.fork_history.append(event)
+        self._record(run_id, node.node_id, "OverlookerForkPointSelected", event)
+        return WorkspaceForkPlan(
+            attempt=record.attempts,
+            workspace=workspace,
+            source_node_id=source_node_id,
+            source_workspace=source_workspace,
+            candidate_node_ids=sorted(candidates),
+            reason=reason,
+        )
 
     def _validate_spec(self, spec: GraphRunSpec) -> None:
         if spec.max_parallelism < 1:
@@ -548,13 +644,35 @@ class GraphRuntime:
             return ["."]
         return []
 
-    def _prepare_workspace(self, run_id: str, node: NodeCapsule) -> Path:
-        workspace = self.root / "runs" / run_id / "nodes" / node.node_id / "workspace"
+    def _attempt_workspace(self, run_id: str, node_id: str, attempt: int) -> Path:
+        return self.root / "runs" / run_id / "nodes" / node_id / f"attempt-{attempt}" / "workspace"
+
+    def _prepare_workspace(self, node: NodeCapsule, fork_plan: WorkspaceForkPlan) -> Path:
+        workspace = fork_plan.workspace
+        if workspace.exists():
+            shutil.rmtree(workspace)
         workspace.mkdir(parents=True, exist_ok=True)
-        if node.workspace:
+        source = fork_plan.source_workspace
+        if source is None and node.workspace:
             source = Path(node.workspace)
-            if source.exists():
-                shutil.copytree(source, workspace, dirs_exist_ok=True)
+        if source and source.exists():
+            shutil.copytree(source, workspace, dirs_exist_ok=True)
+        (workspace / ".egtc_attempt.json").write_text(
+            json.dumps(
+                {
+                    "attempt": fork_plan.attempt,
+                    "source_node_id": fork_plan.source_node_id,
+                    "source_workspace": str(fork_plan.source_workspace)
+                    if fork_plan.source_workspace
+                    else None,
+                    "candidate_node_ids": fork_plan.candidate_node_ids,
+                    "fork_reason": fork_plan.reason,
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
         return workspace
 
     def _checkpoint_path(self, run_id: str) -> Path:

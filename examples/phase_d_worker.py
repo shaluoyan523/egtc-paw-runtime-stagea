@@ -12,26 +12,53 @@ def main() -> int:
     node_id = sys.argv[2]
     delay = float(sys.argv[3]) if len(sys.argv) > 3 else 0.0
     fail_once = "--fail-once" in sys.argv
+    poison_on_fail = "--poison-on-fail" in sys.argv
+    fail_if_poisoned = "--fail-if-poisoned" in sys.argv
 
     time.sleep(delay)
+    runtime_attempt_path = Path(".egtc_attempt.json")
+    runtime_attempt = 1
+    if runtime_attempt_path.exists():
+        try:
+            runtime_attempt = int(json.loads(runtime_attempt_path.read_text(encoding="utf-8")).get("attempt", 1))
+        except Exception:
+            runtime_attempt = 1
     attempt_path = Path(f"{node_id}.attempts")
     attempts = int(attempt_path.read_text(encoding="utf-8")) if attempt_path.exists() else 0
     attempt_path.write_text(str(attempts + 1), encoding="utf-8")
+    poison_path = Path(f"{node_id}.poison")
 
-    if fail_once and attempts == 0:
+    if fail_if_poisoned and poison_path.exists():
+        print(
+            json.dumps(
+                {
+                    "type": "test_result",
+                    "name": f"{node_id}_poison_guard",
+                    "passed": False,
+                    "poison_path": str(poison_path),
+                }
+            )
+        )
+        return 4
+
+    if fail_once and runtime_attempt == 1:
+        if poison_on_fail:
+            poison_path.write_text("failed attempt contaminated this workspace\n", encoding="utf-8")
         print(
             json.dumps(
                 {
                     "type": "test_result",
                     "name": f"{node_id}_first_attempt",
                     "passed": False,
+                    "poisoned": poison_on_fail,
+                    "runtime_attempt": runtime_attempt,
                 }
             )
         )
         return 2
 
     Path(f"{node_id}_{role}.txt").write_text(
-        f"{node_id} {role} completed on attempt {attempts + 1}\n",
+        f"{node_id} {role} completed on runtime attempt {runtime_attempt}\n",
         encoding="utf-8",
     )
     Path("phasea_test_result.json").write_text(

@@ -105,7 +105,7 @@ Run the Phase D graph runtime demo:
 python3 examples/phase_d_graph_runtime_demo.py
 ```
 
-Phase D adds a DAG scheduler with parallel read-only workers, a single-writer lock, checkpoint/resume, retry budget, and livelock/deadlock detection. The demo pauses after two accepted diagnosis nodes, resumes from checkpoint, serializes competing writer nodes, retries one flaky verification node, and finishes accepted.
+Phase D adds a DAG scheduler with parallel read-only workers, a single-writer lock, checkpoint/resume, retry budget, and livelock/deadlock detection. The demo pauses after two accepted diagnosis nodes, resumes from checkpoint, serializes competing writer nodes, retries one flaky verification node from a clean accepted upstream fork, and finishes accepted.
 
 Phase B adds:
 
@@ -123,6 +123,7 @@ Phase D adds:
 - Checkpoint/resume under `phased_graph_data/checkpoints`.
 - Parallel read-only execution with single-writer scheduling.
 - Retry budget plus repeated-failure livelock guard.
+- overlooker-guided retry fork points so failed attempts do not poison the next attempt workspace.
 
 Publish as a private GitHub repository:
 

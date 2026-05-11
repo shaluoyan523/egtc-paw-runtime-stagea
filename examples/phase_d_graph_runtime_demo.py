@@ -72,7 +72,16 @@ def main() -> int:
             node("diagnose-tests", "diagnosis", "read", 0.3, True),
             node("implement-core", "implementation", "write", 0.4, False),
             node("implement-docs", "implementation", "write", 0.4, False),
-            node("verify-flaky", "verification", "read", 0.1, True, "--fail-once"),
+            node(
+                "verify-flaky",
+                "verification",
+                "read",
+                0.1,
+                True,
+                "--fail-once",
+                "--poison-on-fail",
+                "--fail-if-poisoned",
+            ),
         ],
         edges=[
             ("diagnose-api", "implement-core"),
@@ -101,6 +110,12 @@ def main() -> int:
         ),
         "write_lock_wait_count": len(resumed["write_lock_waits"]),
         "retry_events": resumed["retry_events"],
+        "fork_history": {
+            node_id: record["fork_history"] for node_id, record in resumed["nodes"].items()
+        },
+        "accepted_workspaces": {
+            node_id: record["accepted_workspace"] for node_id, record in resumed["nodes"].items()
+        },
         "checkpoint_path": resumed["checkpoint_path"],
         "node_statuses": {
             node_id: record["status"] for node_id, record in resumed["nodes"].items()
@@ -115,6 +130,8 @@ def main() -> int:
         and result["first_status"] == "paused"
         and result["max_observed_parallelism"] >= 2
         and result["write_lock_wait_count"] >= 1
+        and len(result["fork_history"]["verify-flaky"]) == 2
+        and result["fork_history"]["verify-flaky"][-1]["reason"] == "retry_from_accepted_dependency"
     ) else 1
 
 
