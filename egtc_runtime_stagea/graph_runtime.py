@@ -70,6 +70,7 @@ class GraphNodeRecord:
     fork_source_node_id: str | None = None
     fork_source_workspace: str | None = None
     fork_history: list[dict[str, Any]] = field(default_factory=list)
+    fork_advisor_history: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -325,7 +326,13 @@ class GraphRuntime:
                 validator_reports,
                 worker_result,
                 workspace_diff,
-                self.root / "runs" / run_id / "nodes" / node.node_id / "overlooker",
+                self.root
+                / "runs"
+                / run_id
+                / "nodes"
+                / node.node_id
+                / f"attempt-{fork_plan.attempt}"
+                / "overlooker",
             )
         else:
             overlooker_report = self._deterministic_review(
@@ -490,7 +497,14 @@ class GraphRuntime:
         source_node_id: str | None = None
         source_workspace: Path | None = None
         if candidates:
-            source_node_id = sorted(candidates)[-1]
+            source_node_id = self._choose_fork_source(
+                run_id,
+                node,
+                record,
+                records,
+                sorted(candidates),
+                overlooker_mode,
+            )
             source_workspace = Path(records[source_node_id].accepted_workspace or "")
             reason = (
                 "retry_from_accepted_dependency"
@@ -537,6 +551,133 @@ class GraphRuntime:
             candidate_node_ids=sorted(candidates),
             reason=reason,
         )
+
+    def _choose_fork_source(
+        self,
+        run_id: str,
+        node: NodeCapsule,
+        record: GraphNodeRecord,
+        records: dict[str, GraphNodeRecord],
+        candidates: list[str],
+        overlooker_mode: str,
+    ) -> str:
+        default_choice = candidates[-1]
+        if overlooker_mode != "codex" or record.attempts <= 1:
+            return default_choice
+        advisor_workspace = (
+            self.root
+            / "runs"
+            / run_id
+            / "nodes"
+            / node.node_id
+            / f"attempt-{record.attempts}"
+            / "fork-overlooker"
+        )
+        advisor_workspace.mkdir(parents=True, exist_ok=True)
+        input_packet = {
+            "node_id": node.node_id,
+            "attempt": record.attempts,
+            "previous_failure_code": record.failure_code,
+            "candidate_nodes": [
+                {
+                    "node_id": candidate,
+                    "status": records[candidate].status,
+                    "accepted_workspace": records[candidate].accepted_workspace,
+                    "failure_code": records[candidate].failure_code,
+                }
+                for candidate in candidates
+            ],
+            "policy": {
+                "allowed_selection": "Choose one candidate with status NODE_ACCEPTED and a non-empty accepted_workspace.",
+                "goal": "Fork the retry from a known-good upstream workspace, not from the failed attempt workspace.",
+            },
+        }
+        (advisor_workspace / "fork_advisor_input.json").write_text(
+            json.dumps(input_packet, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        advisor_node = NodeCapsule(
+            node_id=f"{node.node_id}-fork-overlooker",
+            phase="Phase D Fork Overlooker",
+            goal="Select the accepted upstream workspace to fork for retry.",
+            command=[],
+            acceptance_criteria=[
+                "Fork advisor must choose an accepted candidate only.",
+                "Fork advisor must write strict JSON.",
+            ],
+            required_evidence=["log", "sandbox_events", "resource_report"],
+            executor_kind="codex_cli",
+            prompt=self._fork_advisor_prompt(),
+            sandbox_profile={
+                "backend": "codex_native",
+                "sandbox_mode": "workspace_write",
+                "network": "none",
+                "allowed_read_paths": ["."],
+                "allowed_write_paths": ["."],
+                "resource_limits": {
+                    "wall_time_sec": 120,
+                    "memory_mb": 1024,
+                    "disk_mb": 512,
+                    "max_processes": 48,
+                    "max_command_count": 1,
+                },
+            },
+        )
+        advisor_result = self.wrapper.run(
+            advisor_node,
+            advisor_workspace,
+            role="overlooker",
+            run_id=run_id,
+        )
+        decision = self._read_fork_decision(advisor_workspace / "fork_decision.json")
+        selected = str(decision.get("selected_node_id") or default_choice)
+        if selected not in candidates:
+            selected = default_choice
+        if records[selected].status != "NODE_ACCEPTED" or not records[selected].accepted_workspace:
+            selected = default_choice
+        event = {
+            "node_id": node.node_id,
+            "attempt": record.attempts,
+            "overlooker_id": advisor_result.worker_id,
+            "overlooker_exit_code": advisor_result.exit_code,
+            "candidate_node_ids": candidates,
+            "selected_node_id": selected,
+            "decision": decision,
+            "workspace": str(advisor_workspace),
+        }
+        record.fork_advisor_history.append(event)
+        self._record(run_id, node.node_id, "OverlookerForkDecision", event)
+        return selected
+
+    def _fork_advisor_prompt(self) -> str:
+        return """
+You are the Phase D Codex overlooker for retry fork selection.
+
+Read ./fork_advisor_input.json and create ./fork_decision.json.
+
+Output strict JSON:
+{
+  "selected_node_id": "...",
+  "rationale": "short reason",
+  "confidence": "low" | "medium" | "high"
+}
+
+Rules:
+- Select only one candidate whose status is NODE_ACCEPTED and accepted_workspace is present.
+- Prefer a direct upstream accepted workspace over any failed attempt workspace.
+- Do not clone repositories.
+- Do not use network.
+- Do not write outside this workspace.
+""".strip()
+
+    def _read_fork_decision(self, path: Path) -> dict[str, Any]:
+        if not path.exists():
+            return {}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+        return data if isinstance(data, dict) else {}
 
     def _validate_spec(self, spec: GraphRunSpec) -> None:
         if spec.max_parallelism < 1:
