@@ -107,6 +107,14 @@ python3 examples/phase_d_graph_runtime_demo.py
 
 Phase D adds a DAG scheduler with parallel read-only workers, a single-writer lock, checkpoint/resume, retry budget, and livelock/deadlock detection. The demo pauses after two accepted diagnosis nodes, resumes from checkpoint, serializes competing writer nodes, retries one flaky verification node from a clean accepted upstream fork, and finishes accepted.
 
+Run the Phase D retry-fork path with a real Codex worker session:
+
+```bash
+python3 examples/phase_d_codex_retry_fork_demo.py
+```
+
+This launches `codex exec --json` for the retrying node. Attempt 1 poisons its workspace and fails; attempt 2 is forked from the accepted baseline workspace and succeeds only if the poison file is absent.
+
 Phase B adds:
 
 - `DirectorAgentV1`: staged central planner named Director Agent.
