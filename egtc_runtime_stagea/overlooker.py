@@ -96,6 +96,11 @@ class CodexOverlooker:
             validator_refs=normalized["validator_refs"],
             report_ref=report_ref,
             codex_event_refs=overlooker_run.event_refs,
+            confidence=str(normalized["confidence"]),
+            cited_evidence=list(normalized["cited_evidence"]),
+            failure_type=normalized.get("failure_type"),
+            recommended_action=str(normalized["recommended_action"]),
+            release_overlooker=bool(normalized["release_overlooker"]),
         )
 
     def _acceptance_packet(
@@ -132,19 +137,27 @@ You are the EGTC-PAW Runtime Stage A Overlooker.
 Read ./acceptance_packet.json and create ./overlooker_report.json.
 The file must be a strict JSON object with exactly these keys:
 {
-  "verdict": "pass" | "fail",
+  "verdict": "pass" | "fail" | "blocked" | "uncertain",
+  "confidence": "low" | "medium" | "high",
   "rationale": "short explanation",
   "evidence_ref": "artifact://...",
-  "validator_refs": ["..."]
+  "cited_evidence": ["artifact://..."],
+  "validator_refs": ["..."],
+  "failure_type": null | "worker_failure" | "validator_failure" | "missing_evidence" | "policy_violation" | "acceptance_failure",
+  "recommended_action": "advance" | "retry_same_node" | "retry_with_modified_instruction" | "request_director_replan" | "request_permission_review" | "require_second_overlooker" | "require_human_review",
+  "release_overlooker": true | false
 }
 
 Pass only when:
 - evidence.evidence_ref.uri exists and is copied into evidence_ref.
+- evidence.evidence_ref.uri is also included in cited_evidence.
 - every validator report has passed=true.
 - required evidence includes diff, test, and log artifacts.
+- recommended_action is advance.
+- release_overlooker is true.
 - the worker reached submitted state, but node acceptance is based on this Overlooker report.
 
-Fail otherwise. Do not clone repositories. Do not run external tests.
+Fail otherwise and choose a recommended_action. Do not clone repositories. Do not run external tests.
 """.strip()
 
     def _read_report(self, report_path: Path) -> dict[str, object]:
@@ -153,7 +166,12 @@ Fail otherwise. Do not clone repositories. Do not run external tests.
                 "verdict": "fail",
                 "rationale": "Overlooker did not create overlooker_report.json.",
                 "evidence_ref": None,
+                "cited_evidence": [],
                 "validator_refs": [],
+                "failure_type": "missing_evidence",
+                "recommended_action": "retry_same_node",
+                "confidence": "high",
+                "release_overlooker": False,
             }
         try:
             data = json.loads(report_path.read_text(encoding="utf-8"))
@@ -162,14 +180,24 @@ Fail otherwise. Do not clone repositories. Do not run external tests.
                 "verdict": "fail",
                 "rationale": f"Overlooker report is not valid JSON: {exc}",
                 "evidence_ref": None,
+                "cited_evidence": [],
                 "validator_refs": [],
+                "failure_type": "acceptance_failure",
+                "recommended_action": "retry_same_node",
+                "confidence": "high",
+                "release_overlooker": False,
             }
         if not isinstance(data, dict):
             return {
                 "verdict": "fail",
                 "rationale": "Overlooker report is not a JSON object.",
                 "evidence_ref": None,
+                "cited_evidence": [],
                 "validator_refs": [],
+                "failure_type": "acceptance_failure",
+                "recommended_action": "retry_same_node",
+                "confidence": "high",
+                "release_overlooker": False,
             }
         return data
 
@@ -184,19 +212,39 @@ Fail otherwise. Do not clone repositories. Do not run external tests.
         validators_passed = all(report.passed for report in validator_reports)
         reported_verdict = str(report_data.get("verdict", "")).lower()
         reported_evidence_ref = report_data.get("evidence_ref")
+        reported_cited_evidence = report_data.get("cited_evidence")
+        cited_evidence = (
+            [str(item) for item in reported_cited_evidence]
+            if isinstance(reported_cited_evidence, list)
+            else []
+        )
+        confidence = str(report_data.get("confidence") or "medium").lower()
+        if confidence not in {"low", "medium", "high"}:
+            confidence = "medium"
+        recommended_action = str(report_data.get("recommended_action") or "").lower()
+        failure_type = report_data.get("failure_type")
+        release_overlooker = bool(report_data.get("release_overlooker"))
 
         can_pass = (
             reported_verdict == "pass"
             and validators_passed
             and bool(evidence_ref)
             and reported_evidence_ref == evidence_ref
+            and evidence_ref in cited_evidence
+            and recommended_action == "advance"
+            and release_overlooker
         )
         if can_pass:
             return {
                 "verdict": "pass",
                 "rationale": str(report_data.get("rationale") or "Overlooker accepted."),
                 "evidence_ref": evidence_ref,
+                "cited_evidence": cited_evidence,
                 "validator_refs": validator_refs,
+                "confidence": confidence,
+                "failure_type": None,
+                "recommended_action": "advance",
+                "release_overlooker": True,
             }
 
         reasons: list[str] = []
@@ -208,9 +256,32 @@ Fail otherwise. Do not clone repositories. Do not run external tests.
             reasons.append("Missing evidence_ref.")
         if reported_evidence_ref != evidence_ref:
             reasons.append("Overlooker did not cite the exact evidence_ref.")
+        if evidence_ref and evidence_ref not in cited_evidence:
+            reasons.append("Overlooker did not include evidence_ref in cited_evidence.")
+        if reported_verdict == "pass" and recommended_action != "advance":
+            reasons.append("Pass verdict must recommend advance.")
+        if reported_verdict == "pass" and not release_overlooker:
+            reasons.append("Pass verdict must set release_overlooker=true.")
+        valid_actions = {
+            "retry_same_node",
+            "retry_with_modified_instruction",
+            "request_director_replan",
+            "request_permission_review",
+            "require_second_overlooker",
+            "require_human_review",
+        }
+        if recommended_action not in valid_actions:
+            recommended_action = "retry_same_node" if validators_passed else "retry_same_node"
+        if not isinstance(failure_type, str) or not failure_type:
+            failure_type = "validator_failure" if not validators_passed else "acceptance_failure"
         return {
             "verdict": "fail",
             "rationale": " ".join(reasons),
             "evidence_ref": evidence_ref if reported_evidence_ref == evidence_ref else None,
+            "cited_evidence": cited_evidence,
             "validator_refs": validator_refs,
+            "confidence": confidence,
+            "failure_type": failure_type,
+            "recommended_action": recommended_action,
+            "release_overlooker": False,
         }

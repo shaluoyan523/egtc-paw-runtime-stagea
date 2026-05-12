@@ -112,6 +112,7 @@ def main() -> int:
         retry_budget=1,
         max_same_failure_retries=2,
         overlooker_mode="codex",
+        director_mode="codex",
     )
     result = runtime.run_graph(spec, run_id="phase-d-codex-retry-fork")
     verify = result["nodes"]["codex-verify"]
@@ -131,6 +132,7 @@ def main() -> int:
         "attempt2_success_exists": (attempt2 / "codex_retry_success.txt").exists() if attempt2 else None,
         "fork_history": fork_history,
         "fork_advisor_history": verify["fork_advisor_history"],
+        "graph_patch_history": verify["graph_patch_history"],
         "retry_events": result["retry_events"],
         "checkpoint_path": result["checkpoint_path"],
     }
@@ -142,6 +144,9 @@ def main() -> int:
         and report["retry_source_node"] == "baseline"
         and len(report["fork_advisor_history"]) == 1
         and report["fork_advisor_history"][0]["selected_node_id"] == "baseline"
+        and len(report["graph_patch_history"]) == 1
+        and report["graph_patch_history"][0]["compiled"]["accepted"]
+        and report["graph_patch_history"][0]["patch"]["operations"][0]["op"] == "retry_node"
         and report["attempt1_poison_exists"]
         and not report["attempt2_poison_exists"]
         and report["attempt2_success_exists"]

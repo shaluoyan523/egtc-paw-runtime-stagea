@@ -93,6 +93,43 @@ class OverlookerReport:
     validator_refs: list[str]
     report_ref: ArtifactRef | None = None
     codex_event_refs: list[ArtifactRef] = field(default_factory=list)
+    confidence: str = "medium"
+    cited_evidence: list[str] = field(default_factory=list)
+    failure_type: str | None = None
+    recommended_action: str = "advance"
+    release_overlooker: bool = False
+
+
+@dataclass
+class GraphPatchOperation:
+    op: str
+    node_id: str | None = None
+    source_node_id: str | None = None
+    target_node_id: str | None = None
+    value: dict[str, Any] = field(default_factory=dict)
+    rationale: str = ""
+
+
+@dataclass
+class GraphPatch:
+    patch_id: str
+    director_id: str
+    graph_id: str
+    triggering_node_id: str
+    triggering_event: str
+    overlooker_report_ref: str | None
+    operations: list[GraphPatchOperation]
+    rationale: str
+    replan_budget_cost: int = 1
+
+
+@dataclass
+class CompiledGraphPatch:
+    accepted: bool
+    patch_id: str
+    graph_id: str
+    operations: list[GraphPatchOperation]
+    findings: list[dict[str, Any]]
 
 
 def to_plain_dict(value: Any) -> Any:

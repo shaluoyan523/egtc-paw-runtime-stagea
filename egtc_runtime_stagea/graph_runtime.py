@@ -11,11 +11,15 @@ from typing import Any
 
 from .artifact_store import ArtifactStore
 from .codex_wrapper import CodexExecWrapper
+from .compiler import WorkflowCompiler
 from .event_log import EventLog
 from .evidence import EvidenceCollector
 from .identity import IdentityService
 from .models import (
+    CompiledGraphPatch,
     EvidenceBundle,
+    GraphPatch,
+    GraphPatchOperation,
     NodeCapsule,
     NodeState,
     OverlookerReport,
@@ -46,6 +50,8 @@ class GraphRunSpec:
     retry_budget: int = 0
     max_same_failure_retries: int = 2
     overlooker_mode: str = "deterministic"
+    director_mode: str = "deterministic"
+    replan_budget: int = 0
 
 
 @dataclass
@@ -65,12 +71,19 @@ class GraphNodeRecord:
     evidence_ref: str | None = None
     resource_report_ref: str | None = None
     sandbox_events_ref: str | None = None
+    overlooker_verdict: str | None = None
+    overlooker_report_ref: str | None = None
+    overlooker_recommended_action: str | None = None
+    overlooker_failure_type: str | None = None
+    overlooker_confidence: str | None = None
+    release_overlooker: bool = False
     current_workspace: str | None = None
     accepted_workspace: str | None = None
     fork_source_node_id: str | None = None
     fork_source_workspace: str | None = None
     fork_history: list[dict[str, Any]] = field(default_factory=list)
     fork_advisor_history: list[dict[str, Any]] = field(default_factory=list)
+    graph_patch_history: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -108,11 +121,20 @@ class GraphRuntime:
             self.runtime_actor,
             ["artifact:read", "artifact:write"],
         )
+        self.director_actor = self.identity.actor("director-phased", "director")
+        self.director_token = self.identity.issue_token(
+            self.director_actor,
+            ["artifact:read", "artifact:write"],
+        )
         self.artifacts = ArtifactStore(self.root / "artifacts", self.identity)
         self.event_log = EventLog(self.root / "events.sqlite3")
         self.wrapper = CodexExecWrapper(
             self.artifacts, self.runtime_actor, self.runtime_token
         )
+        self.director_wrapper = CodexExecWrapper(
+            self.artifacts, self.director_actor, self.director_token
+        )
+        self.compiler = WorkflowCompiler()
         self.collector = EvidenceCollector(
             self.artifacts, self.runtime_actor, self.runtime_token
         )
@@ -269,7 +291,7 @@ class GraphRuntime:
                     if result is not None:
                         self._apply_node_result(run_id, record, result)
                     if record.status == "NODE_REJECTED":
-                        retry_event = self._maybe_retry(run_id, spec, record)
+                        retry_event = self._maybe_retry(run_id, spec, record, records)
                         if retry_event:
                             retry_events.append(retry_event)
                     self._write_checkpoint(run_id, spec, records, "running")
@@ -373,6 +395,16 @@ class GraphRuntime:
         record.resource_report_ref = resource_ref.uri if resource_ref else None
         record.sandbox_events_ref = sandbox_ref.uri if sandbox_ref else None
         validators_passed = all(report.passed for report in result.validator_reports)
+        record.overlooker_verdict = result.overlooker_report.verdict
+        record.overlooker_report_ref = (
+            result.overlooker_report.report_ref.uri
+            if result.overlooker_report.report_ref
+            else None
+        )
+        record.overlooker_recommended_action = result.overlooker_report.recommended_action
+        record.overlooker_failure_type = result.overlooker_report.failure_type
+        record.overlooker_confidence = result.overlooker_report.confidence
+        record.release_overlooker = result.overlooker_report.release_overlooker
         if result.final_state == NodeState.NODE_ACCEPTED.value:
             record.status = "NODE_ACCEPTED"
             record.failure_code = None
@@ -393,6 +425,10 @@ class GraphRuntime:
                 "worker_id": record.current_worker_id,
                 "validators_passed": validators_passed,
                 "overlooker_verdict": result.overlooker_report.verdict,
+                "overlooker_report_ref": record.overlooker_report_ref,
+                "overlooker_recommended_action": record.overlooker_recommended_action,
+                "overlooker_failure_type": record.overlooker_failure_type,
+                "release_overlooker": record.release_overlooker,
             },
         )
 
@@ -401,6 +437,7 @@ class GraphRuntime:
         run_id: str,
         spec: GraphRunSpec,
         record: GraphNodeRecord,
+        records: dict[str, GraphNodeRecord],
     ) -> dict[str, Any] | None:
         failure_code = record.failure_code or "unknown_failure"
         repeated = record.failure_counts.get(failure_code, 0)
@@ -414,19 +451,343 @@ class GraphRuntime:
             }
             self._record(run_id, record.node_id, "LivelockDetected", event)
             return event
+        recommended_action = record.overlooker_recommended_action or "retry_same_node"
+        retry_actions = {"retry_same_node", "retry_with_modified_instruction"}
+        replan_actions = {"request_director_replan"}
+        if recommended_action not in retry_actions | replan_actions:
+            event = {
+                "node_id": record.node_id,
+                "failure_code": failure_code,
+                "recommended_action": recommended_action,
+                "action": "blocked_by_overlooker_recommendation",
+            }
+            self._record(run_id, record.node_id, "NodeRetryNotScheduled", event)
+            return event
+        if recommended_action in replan_actions and spec.replan_budget <= 0:
+            event = {
+                "node_id": record.node_id,
+                "failure_code": failure_code,
+                "recommended_action": recommended_action,
+                "action": "blocked_replan_budget_exhausted",
+            }
+            self._record(run_id, record.node_id, "NodeRetryNotScheduled", event)
+            return event
         if record.attempts < spec.max_attempts and spec.retry_budget > 0:
+            patch = self._propose_retry_patch(run_id, spec, record, records)
+            compiled = self.compiler.validate_patch(patch, set(records), spec.graph_id)
+            patch_ref = self.artifacts.put_json(
+                to_plain_dict(patch),
+                {"kind": "stage_d_graph_patch", "graph_id": spec.graph_id, "node_id": record.node_id},
+                self.director_actor,
+                self.director_token,
+            )
+            compiled_ref = self.artifacts.put_json(
+                to_plain_dict(compiled),
+                {
+                    "kind": "stage_d_compiled_graph_patch",
+                    "graph_id": spec.graph_id,
+                    "node_id": record.node_id,
+                    "patch_id": patch.patch_id,
+                },
+                self.runtime_actor,
+                self.runtime_token,
+            )
+            patch_event = {
+                "patch": to_plain_dict(patch),
+                "compiled": to_plain_dict(compiled),
+                "patch_ref": to_plain_dict(patch_ref),
+                "compiled_patch_ref": to_plain_dict(compiled_ref),
+            }
+            record.graph_patch_history.append(patch_event)
+            self._record(run_id, record.node_id, "DirectorGraphPatchProposed", patch_event)
+            if not compiled.accepted:
+                record.status = "NODE_ABORTED"
+                event = {
+                    "node_id": record.node_id,
+                    "failure_code": failure_code,
+                    "patch_id": patch.patch_id,
+                    "findings": compiled.findings,
+                    "action": "abort_invalid_graph_patch",
+                }
+                self._record(run_id, record.node_id, "GraphPatchRejected", event)
+                return event
+
+            applied = self._apply_graph_patch(run_id, spec, compiled, record)
+            if not applied:
+                event = {
+                    "node_id": record.node_id,
+                    "failure_code": failure_code,
+                    "patch_id": patch.patch_id,
+                    "action": "graph_patch_noop",
+                }
+                self._record(run_id, record.node_id, "GraphPatchNoop", event)
+                return event
             spec.retry_budget -= 1
-            record.status = "NODE_PLANNED"
+            if recommended_action in replan_actions:
+                spec.replan_budget = max(0, spec.replan_budget - patch.replan_budget_cost)
             event = {
                 "node_id": record.node_id,
                 "failure_code": failure_code,
                 "attempts": record.attempts,
                 "remaining_retry_budget": spec.retry_budget,
-                "action": "retry",
+                "remaining_replan_budget": spec.replan_budget,
+                "patch_id": patch.patch_id,
+                "recommended_action": recommended_action,
+                "action": "retry_via_director_graph_patch",
             }
             self._record(run_id, record.node_id, "NodeRetryScheduled", event)
             return event
         return None
+
+    def _propose_retry_patch(
+        self,
+        run_id: str,
+        spec: GraphRunSpec,
+        record: GraphNodeRecord,
+        records: dict[str, GraphNodeRecord],
+    ) -> GraphPatch:
+        if spec.director_mode != "codex":
+            return GraphPatch(
+                patch_id=f"graph-patch-{uuid.uuid4().hex[:12]}",
+                director_id=self.director_actor.actor_id,
+                graph_id=spec.graph_id,
+                triggering_node_id=record.node_id,
+                triggering_event="overlooker_rejected_node",
+                overlooker_report_ref=record.overlooker_report_ref,
+                operations=[
+                    GraphPatchOperation(
+                        op="retry_node",
+                        node_id=record.node_id,
+                        value={
+                            "failure_code": record.failure_code,
+                            "recommended_action": record.overlooker_recommended_action,
+                        },
+                        rationale="Retry the rejected node through a compiler-validated Stage D GraphPatch.",
+                    )
+                ],
+                rationale="Deterministic Director selected bounded retry for the rejected node.",
+            )
+
+        director_workspace = (
+            self.root
+            / "runs"
+            / run_id
+            / "nodes"
+            / record.node_id
+            / f"after-attempt-{record.attempts}"
+            / "director"
+        )
+        director_workspace.mkdir(parents=True, exist_ok=True)
+        runtime_state = {
+            "run_id": run_id,
+            "graph_id": spec.graph_id,
+            "triggering_node": to_plain_dict(record),
+            "known_node_ids": sorted(records),
+            "node_statuses": {
+                node_id: {
+                    "status": node_record.status,
+                    "attempts": node_record.attempts,
+                    "accepted_workspace": node_record.accepted_workspace,
+                    "failure_code": node_record.failure_code,
+                }
+                for node_id, node_record in records.items()
+            },
+            "policy": {
+                "stage": "Phase D",
+                "allowed_operations": ["retry_node"],
+                "forbidden": [
+                    "Do not change permissions or sandbox_profile.",
+                    "Do not add or remove graph edges in Phase D.",
+                    "Do not skip the Overlooker gate.",
+                    "Retry only the triggering node.",
+                ],
+            },
+        }
+        (director_workspace / "director_runtime_state.json").write_text(
+            json.dumps(runtime_state, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        director_node = NodeCapsule(
+            node_id=f"{record.node_id}-director-graph-patch",
+            phase="Phase D Director",
+            goal="Create a compiler-valid Stage D GraphPatch for the rejected node.",
+            command=[],
+            acceptance_criteria=[
+                "Director must write strict JSON to graph_patch.json.",
+                "Director may only use retry_node in Phase D.",
+                "Director must not change permissions, sandbox policy, or edges.",
+            ],
+            required_evidence=["log", "sandbox_events", "resource_report"],
+            executor_kind="codex_cli",
+            prompt=self._director_patch_prompt(),
+            sandbox_profile={
+                "backend": "codex_native",
+                "sandbox_mode": "workspace_write",
+                "network": "none",
+                "allowed_read_paths": ["."],
+                "allowed_write_paths": ["."],
+                "resource_limits": {
+                    "wall_time_sec": 120,
+                    "memory_mb": 1024,
+                    "disk_mb": 512,
+                    "max_processes": 48,
+                    "max_command_count": 1,
+                },
+            },
+        )
+        director_result = self.director_wrapper.run(
+            director_node,
+            director_workspace,
+            role="director",
+            run_id=run_id,
+        )
+        data = self._read_graph_patch(director_workspace / "graph_patch.json")
+        patch = self._graph_patch_from_data(
+            data,
+            spec,
+            record,
+            director_result.worker_id,
+        )
+        self._record(
+            run_id,
+            record.node_id,
+            "DirectorGraphPatchSessionCompleted",
+            {
+                "director_id": director_result.worker_id,
+                "exit_code": director_result.exit_code,
+                "workspace": str(director_workspace),
+                "event_refs": [to_plain_dict(ref) for ref in director_result.event_refs],
+                "patch_id": patch.patch_id,
+            },
+        )
+        return patch
+
+    def _director_patch_prompt(self) -> str:
+        return """
+You are the EGTC-PAW Phase D Director Agent.
+
+Read ./director_runtime_state.json and create ./graph_patch.json.
+
+Output strict JSON:
+{
+  "patch_id": "graph-patch-...",
+  "director_id": "codex-director",
+  "graph_id": "...",
+  "triggering_node_id": "...",
+  "triggering_event": "overlooker_rejected_node",
+  "overlooker_report_ref": "artifact://..." | null,
+  "operations": [
+    {
+      "op": "retry_node",
+      "node_id": "...",
+      "source_node_id": null,
+      "target_node_id": null,
+      "value": {
+        "failure_code": "...",
+        "recommended_action": "..."
+      },
+      "rationale": "short reason"
+    }
+  ],
+  "rationale": "short reason",
+  "replan_budget_cost": 1
+}
+
+Rules:
+- Use exactly one retry_node operation.
+- Retry only the triggering node from director_runtime_state.json.
+- Do not modify permissions, sandbox_profile, network policy, graph edges, or Overlooker gates.
+- Do not clone repositories.
+- Do not use network.
+- Do not write outside this workspace.
+""".strip()
+
+    def _read_graph_patch(self, path: Path) -> dict[str, Any]:
+        if not path.exists():
+            return {"operations": [{"op": "missing_director_output"}]}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            return {
+                "rationale": f"Director graph_patch.json was not valid JSON: {exc}",
+                "operations": [{"op": "invalid_director_output"}],
+            }
+        return data if isinstance(data, dict) else {"operations": [{"op": "invalid_director_output"}]}
+
+    def _graph_patch_from_data(
+        self,
+        data: dict[str, Any],
+        spec: GraphRunSpec,
+        record: GraphNodeRecord,
+        director_id: str,
+    ) -> GraphPatch:
+        raw_operations = data.get("operations")
+        operations: list[GraphPatchOperation] = []
+        if isinstance(raw_operations, list):
+            for raw in raw_operations:
+                if not isinstance(raw, dict):
+                    continue
+                value = raw.get("value")
+                operations.append(
+                    GraphPatchOperation(
+                        op=str(raw.get("op") or ""),
+                        node_id=str(raw["node_id"]) if raw.get("node_id") is not None else None,
+                        source_node_id=str(raw["source_node_id"])
+                        if raw.get("source_node_id") is not None
+                        else None,
+                        target_node_id=str(raw["target_node_id"])
+                        if raw.get("target_node_id") is not None
+                        else None,
+                        value=value if isinstance(value, dict) else {},
+                        rationale=str(raw.get("rationale") or ""),
+                    )
+                )
+        if not operations:
+            operations = [GraphPatchOperation(op="missing_director_output", node_id=record.node_id)]
+
+        return GraphPatch(
+            patch_id=str(data.get("patch_id") or f"graph-patch-{uuid.uuid4().hex[:12]}"),
+            director_id=director_id,
+            graph_id=str(data.get("graph_id") or spec.graph_id),
+            triggering_node_id=str(data.get("triggering_node_id") or record.node_id),
+            triggering_event=str(data.get("triggering_event") or "overlooker_rejected_node"),
+            overlooker_report_ref=(
+                str(data["overlooker_report_ref"])
+                if data.get("overlooker_report_ref") is not None
+                else record.overlooker_report_ref
+            ),
+            operations=operations,
+            rationale=str(data.get("rationale") or "Director proposed a Stage D retry patch."),
+            replan_budget_cost=int(data.get("replan_budget_cost") or 1),
+        )
+
+    def _apply_graph_patch(
+        self,
+        run_id: str,
+        spec: GraphRunSpec,
+        compiled: CompiledGraphPatch,
+        record: GraphNodeRecord,
+    ) -> bool:
+        applied = False
+        for operation in compiled.operations:
+            target_node_id = operation.node_id or operation.target_node_id
+            if operation.op == "retry_node" and target_node_id == record.node_id:
+                record.status = "NODE_PLANNED"
+                record.current_worker_id = None
+                record.final_state = None
+                applied = True
+        if applied:
+            self._record(
+                run_id,
+                record.node_id,
+                "GraphPatchApplied",
+                {
+                    "graph_id": spec.graph_id,
+                    "patch_id": compiled.patch_id,
+                    "operations": to_plain_dict(compiled.operations),
+                },
+            )
+        return applied
 
     def _deterministic_review(
         self,
@@ -445,7 +806,12 @@ class GraphRuntime:
                 else "Deterministic Phase D overlooker rejected the node."
             ),
             "evidence_ref": evidence.evidence_ref.uri if can_pass else None,
+            "cited_evidence": [evidence.evidence_ref.uri] if can_pass else [],
             "validator_refs": [report.validator_id for report in validator_reports],
+            "confidence": "high",
+            "failure_type": None if can_pass else self._failure_code(worker_result, validator_reports),
+            "recommended_action": "advance" if can_pass else "retry_same_node",
+            "release_overlooker": can_pass,
         }
         report_ref = self.artifacts.put_json(
             report,
@@ -461,6 +827,11 @@ class GraphRuntime:
             validator_refs=list(report["validator_refs"]),
             report_ref=report_ref,
             codex_event_refs=[],
+            confidence=str(report["confidence"]),
+            cited_evidence=list(report["cited_evidence"]),
+            failure_type=report["failure_type"],
+            recommended_action=str(report["recommended_action"]),
+            release_overlooker=bool(report["release_overlooker"]),
         )
 
     def _initial_records(self, spec: GraphRunSpec) -> dict[str, GraphNodeRecord]:
@@ -856,6 +1227,8 @@ Rules:
             "retry_budget": spec.retry_budget,
             "max_same_failure_retries": spec.max_same_failure_retries,
             "overlooker_mode": spec.overlooker_mode,
+            "director_mode": spec.director_mode,
+            "replan_budget": spec.replan_budget,
         }
 
     def _spec_from_checkpoint(self, checkpoint: dict[str, Any]) -> GraphRunSpec:
@@ -869,6 +1242,8 @@ Rules:
             retry_budget=int(raw["retry_budget"]),
             max_same_failure_retries=int(raw["max_same_failure_retries"]),
             overlooker_mode=str(raw["overlooker_mode"]),
+            director_mode=str(raw.get("director_mode", "deterministic")),
+            replan_budget=int(raw.get("replan_budget", 0)),
         )
 
     def _node_from_plain(self, raw: dict[str, Any]) -> NodeCapsule:

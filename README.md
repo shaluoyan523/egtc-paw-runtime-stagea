@@ -113,7 +113,7 @@ Run the Phase D retry-fork path with a real Codex worker session:
 python3 examples/phase_d_codex_retry_fork_demo.py
 ```
 
-This launches `codex exec --json` for the retrying node. Attempt 1 poisons its workspace and fails; attempt 2 is forked from the accepted baseline workspace and succeeds only if the poison file is absent.
+This launches `codex exec --json` for the retrying worker node, the Codex Overlooker, the Codex Director GraphPatch step, and the retry fork Overlooker. Attempt 1 poisons its workspace and fails; the Overlooker rejects the node, the Director emits a compiler-validated `retry_node` `GraphPatch`, and attempt 2 is forked from the accepted baseline workspace. It succeeds only if the poison file is absent.
 
 Phase B adds:
 
@@ -127,11 +127,20 @@ Phase B adds:
 Phase D adds:
 
 - `GraphRuntime`: multi-node DAG scheduler layered on the Stage A/C execution chain.
-- `GraphRunSpec`: graph nodes, edges, parallelism, retry, and overlooker-mode policy.
+- `GraphRunSpec`: graph nodes, edges, parallelism, retry, overlooker-mode policy, and Director GraphPatch mode.
 - Checkpoint/resume under `phased_graph_data/checkpoints`.
 - Parallel read-only execution with single-writer scheduling.
 - Retry budget plus repeated-failure livelock guard.
-- overlooker-guided retry fork points so failed attempts do not poison the next attempt workspace.
+- v5-style `OverlookerReport` fields: `confidence`, `cited_evidence`, `failure_type`, `recommended_action`, and `release_overlooker`.
+- Stage D `GraphPatch` / `CompiledGraphPatch` schemas with compiler validation for bounded `retry_node` patches.
+- Director runtime GraphPatch application before retry scheduling.
+- Overlooker-guided retry fork points so failed attempts do not poison the next attempt workspace.
+
+Deferred beyond Phase D:
+
+- Conflict arbitration, second Overlooker, human-review placeholders, and permission escalation belong to Phase E.
+- TPGO, textual gradients, optimization memory, targeted validation, and rollback retention belong to Phase F.
+- Secret handling, redaction, artifact secret scanning, and per-run isolation boundaries belong to Phase G.
 
 Publish as a private GitHub repository:
 
