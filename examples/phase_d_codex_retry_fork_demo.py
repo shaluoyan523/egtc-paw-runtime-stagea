@@ -146,6 +146,7 @@ def main() -> int:
         and report["fork_advisor_history"][0]["selected_node_id"] == "baseline"
         and len(report["graph_patch_history"]) == 1
         and report["graph_patch_history"][0]["compiled"]["accepted"]
+        and report["graph_patch_history"][0]["patch"]["director_id"] == "director-phased"
         and report["graph_patch_history"][0]["patch"]["operations"][0]["op"] == "retry_node"
         and report["attempt1_poison_exists"]
         and not report["attempt2_poison_exists"]

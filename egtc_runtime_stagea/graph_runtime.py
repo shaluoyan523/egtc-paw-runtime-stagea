@@ -646,14 +646,14 @@ class GraphRuntime:
             data,
             spec,
             record,
-            director_result.worker_id,
         )
         self._record(
             run_id,
             record.node_id,
             "DirectorGraphPatchSessionCompleted",
             {
-                "director_id": director_result.worker_id,
+                "director_id": self.director_actor.actor_id,
+                "director_session_id": director_result.worker_id,
                 "exit_code": director_result.exit_code,
                 "workspace": str(director_workspace),
                 "event_refs": [to_plain_dict(ref) for ref in director_result.event_refs],
@@ -719,7 +719,6 @@ Rules:
         data: dict[str, Any],
         spec: GraphRunSpec,
         record: GraphNodeRecord,
-        director_id: str,
     ) -> GraphPatch:
         raw_operations = data.get("operations")
         operations: list[GraphPatchOperation] = []
@@ -747,7 +746,7 @@ Rules:
 
         return GraphPatch(
             patch_id=str(data.get("patch_id") or f"graph-patch-{uuid.uuid4().hex[:12]}"),
-            director_id=director_id,
+            director_id=self.director_actor.actor_id,
             graph_id=str(data.get("graph_id") or spec.graph_id),
             triggering_node_id=str(data.get("triggering_node_id") or record.node_id),
             triggering_event=str(data.get("triggering_event") or "overlooker_rejected_node"),
