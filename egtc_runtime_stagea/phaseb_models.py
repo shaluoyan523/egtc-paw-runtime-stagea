@@ -49,6 +49,7 @@ class WorkflowSkeleton:
     nodes: list[WorkflowSkeletonNode]
     edges: list[tuple[str, str]]
     rationale: str
+    agent_allocation: dict[str, Any] = field(default_factory=dict)
     experience_pattern_ids: list[str] = field(default_factory=list)
     experience_rationale: list[str] = field(default_factory=list)
 
@@ -90,6 +91,8 @@ class WorkflowBlueprint:
     workflow_skeleton: WorkflowSkeleton
     node_instantiations: list[NodeInstantiation]
     experience_pattern_ids: list[str] = field(default_factory=list)
+    director_mode: str = "deterministic"
+    director_session_id: str | None = None
 
 
 @dataclass

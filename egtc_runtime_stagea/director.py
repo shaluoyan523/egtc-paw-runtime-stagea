@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import re
 import uuid
+import json
+from pathlib import Path
+from typing import Any
 
+from .artifact_store import ArtifactStore
+from .codex_wrapper import CodexExecWrapper
 from .experience import ExperienceLibrary, ExperienceMatch
-from .models import NodeCapsule
+from .identity import IdentityService
+from .models import NodeCapsule, to_plain_dict
 from .phaseb_models import (
+    PermissionGroundingReport,
     NodeInstantiation,
+    SandboxProfile,
     TaskDiagnosis,
     WorkflowBlueprint,
     WorkflowSkeleton,
@@ -191,6 +199,408 @@ class DirectorAgentV1:
             node_instantiations=instantiations,
             experience_pattern_ids=skeleton.experience_pattern_ids,
         )
+
+    def plan_with_codex_director(
+        self,
+        objective: str,
+        repo_policy: RepoPolicy,
+        workspace: Path,
+        *,
+        codex_binary: str | None = None,
+        timeout_sec: int = 240,
+    ) -> WorkflowBlueprint:
+        """Launch a real Codex Director session for Stage F experience selection."""
+
+        if self.experience_library is None:
+            raise ValueError("plan_with_codex_director requires an ExperienceLibrary")
+        workspace.mkdir(parents=True, exist_ok=True)
+        seed_matches = self.experience_library.retrieve(objective, limit=8)
+        input_packet = {
+            "objective": objective,
+            "repo_policy": to_plain_dict(repo_policy),
+            "experience_candidates": [
+                {
+                    "pattern_id": match.pattern.pattern_id,
+                    "pattern_type": match.pattern.pattern_type,
+                    "description": match.pattern.description,
+                    "score": match.score,
+                    "matched_signals": match.matched_signals,
+                    "recommended_structure": match.pattern.recommended_structure,
+                    "required_evidence": match.pattern.required_evidence,
+                    "risk_notes": match.pattern.risk_notes,
+                    "evidence_level": match.pattern.evidence_level,
+                    "confidence_score": match.pattern.confidence_score,
+                    "source_refs": match.pattern.source_refs,
+                }
+                for match in seed_matches
+            ],
+            "director_rules": [
+                "Director must choose how many agents/nodes are needed.",
+                "Director must cite selected experience pattern ids.",
+                "Director must not request network or sandbox/permission expansion.",
+                "Director must keep verification read-only.",
+                "Director structured output is compiled before execution.",
+            ],
+        }
+        (workspace / "director_input.json").write_text(
+            json.dumps(input_packet, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        identity = IdentityService()
+        actor = identity.actor("director-phasef", "director")
+        token = identity.issue_token(actor, ["artifact:read", "artifact:write"])
+        artifacts = ArtifactStore(workspace / "artifacts", identity)
+        wrapper = CodexExecWrapper(artifacts, actor, token)
+        director_node = NodeCapsule(
+            node_id="phasef-director-agent",
+            phase="Phase F Director",
+            goal="Select and apply experience patterns, including agent allocation.",
+            command=[],
+            acceptance_criteria=[
+                "Director must write strict JSON to director_output.json.",
+                "Director chooses topology and number of worker agents.",
+                "Director cites experience pattern ids used for the workflow.",
+            ],
+            required_evidence=["log", "sandbox_events", "resource_report"],
+            executor_kind="codex_cli",
+            prompt=self._phase_f_director_prompt(),
+            codex_binary=codex_binary,
+            sandbox_profile={
+                "backend": "codex_native",
+                "sandbox_mode": "workspace_write",
+                "network": "none",
+                "allowed_read_paths": ["."],
+                "allowed_write_paths": ["."],
+                "resource_limits": {
+                    "wall_time_sec": timeout_sec,
+                    "memory_mb": 1024,
+                    "disk_mb": 512,
+                    "max_processes": 64,
+                    "max_command_count": 1,
+                },
+            },
+        )
+        director_result = wrapper.run(
+            director_node,
+            workspace,
+            role="director",
+        )
+        if director_result.exit_code != 0:
+            raise RuntimeError(
+                f"Codex Director session failed with exit_code={director_result.exit_code}"
+            )
+        output = self._read_director_output(workspace / "director_output.json")
+        if not output:
+            raise RuntimeError("Codex Director did not create a valid director_output.json")
+        blueprint = self._blueprint_from_codex_director_output(
+            output,
+            objective,
+            repo_policy,
+            seed_matches,
+            director_result.worker_id,
+        )
+        blueprint.director_mode = "codex"
+        blueprint.director_session_id = director_result.worker_id
+        return blueprint
+
+    def _phase_f_director_prompt(self) -> str:
+        return """
+You are the EGTC-PAW Phase F Director Agent.
+
+Read ./director_input.json and create ./director_output.json.
+
+You must choose and apply experience-library patterns yourself. This includes:
+- selecting which experience pattern ids to use,
+- choosing topology,
+- choosing how many worker agents/nodes to instantiate,
+- assigning roles to each node,
+- assigning experience_pattern_ids to the skeleton and each node.
+
+Output strict JSON:
+{
+  "task_diagnosis": {
+    "task_kind": "implementation" | "analysis" | "director_planning",
+    "risk_level": "low" | "medium" | "high",
+    "requires_code_change": true | false,
+    "requires_tests": true | false,
+    "repo_touchpoints": ["."],
+    "unknowns": [],
+    "experience_matches": [
+      {
+        "pattern_id": "...",
+        "pattern_type": "...",
+        "score": 0,
+        "matched_signals": ["..."],
+        "description": "...",
+        "evidence_level": "...",
+        "confidence_score": 0,
+        "source_refs": ["..."]
+      }
+    ]
+  },
+  "workflow_skeleton": {
+    "topology": "parallel_explore_then_single_writer_then_verify" | "linear",
+    "agent_allocation": {
+      "total_agents": 4,
+      "roles": {"explorer": 2, "worker": 1, "verifier": 1}
+    },
+    "experience_pattern_ids": ["..."],
+    "experience_rationale": ["..."],
+    "nodes": [
+      {
+        "node_id": "explore-context",
+        "phase": "exploration",
+        "role": "explorer",
+        "goal": "...",
+        "depends_on": [],
+        "expected_outputs": ["analysis_log"],
+        "experience_pattern_ids": ["..."]
+      }
+    ],
+    "edges": [["explore-context", "implement"]]
+  },
+  "node_instantiations": [
+    {
+      "skeleton_node_id": "explore-context",
+      "node_id": "phasef-explore-context",
+      "phase": "exploration",
+      "goal": "...",
+      "executor_kind": "codex_cli",
+      "command": [],
+      "prompt": "Worker-specific instruction for this node.",
+      "required_evidence": ["diff", "test", "log"],
+      "acceptance_criteria": ["Worker may only submit results.", "Overlooker acceptance must cite evidence_ref."],
+      "experience_pattern_ids": ["..."],
+      "permission_grounding": {
+        "network": "none",
+        "allowed_read_paths": ["."],
+        "allowed_write_paths": [],
+        "allowed_commands": [["python3", "-c", "print('Director-selected node submitted')"]],
+        "grounded_by": ["repo_policy.allowed_read_paths", "repo_policy.allowed_write_paths", "repo_policy.test_commands", "repo_policy.network_allowed_by_default"],
+        "justification": "Read-only exploration."
+      }
+    }
+  ]
+}
+
+Rules:
+- Use only pattern ids present in director_input.experience_candidates.
+- For a complex implementation task, prefer two explorers, one writer, and one verifier when matching experience supports it.
+- Node instantiations should normally use executor_kind="codex_cli" because workers are agents.
+- Do not request network access.
+- Do not write sensitive paths.
+- Verification nodes must be read-only.
+- No markdown. Do not clone repositories. Do not run tests.
+""".strip()
+
+    def _read_director_output(self, path: Path) -> dict[str, Any]:
+        if not path.exists():
+            return {}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _blueprint_from_codex_director_output(
+        self,
+        output: dict[str, Any],
+        objective: str,
+        repo_policy: RepoPolicy,
+        seed_matches: list[ExperienceMatch],
+        director_session_id: str,
+    ) -> WorkflowBlueprint:
+        if not output:
+            raise ValueError("Codex Director output is empty")
+        raw_diagnosis = output.get("task_diagnosis") if isinstance(output.get("task_diagnosis"), dict) else {}
+        raw_skeleton = output.get("workflow_skeleton") if isinstance(output.get("workflow_skeleton"), dict) else {}
+        raw_nodes = raw_skeleton.get("nodes") if isinstance(raw_skeleton.get("nodes"), list) else []
+        raw_instantiations = output.get("node_instantiations") if isinstance(output.get("node_instantiations"), list) else []
+        selected_pattern_ids = self._active_director_pattern_ids(output, seed_matches)
+        if not raw_diagnosis:
+            raise ValueError("Codex Director output is missing task_diagnosis")
+        if not raw_skeleton:
+            raise ValueError("Codex Director output is missing workflow_skeleton")
+        if not raw_nodes:
+            raise ValueError("Codex Director output has no skeleton nodes")
+        if not raw_instantiations:
+            raise ValueError("Codex Director output has no node instantiations")
+        diagnosis = TaskDiagnosis(
+            task_id=f"task-{uuid.uuid4().hex[:10]}",
+            objective=objective,
+            task_kind=str(raw_diagnosis.get("task_kind") or "implementation"),
+            risk_level=str(raw_diagnosis.get("risk_level") or "medium"),
+            repo_touchpoints=[
+                str(path) for path in raw_diagnosis.get("repo_touchpoints", ["."])
+            ],
+            requires_code_change=bool(raw_diagnosis.get("requires_code_change", True)),
+            requires_tests=bool(raw_diagnosis.get("requires_tests", True)),
+            unknowns=[str(item) for item in raw_diagnosis.get("unknowns", [])],
+            experience_matches=(
+                raw_diagnosis.get("experience_matches")
+                if isinstance(raw_diagnosis.get("experience_matches"), list)
+                else self._serialize_matches(seed_matches)
+            ),
+        )
+        skeleton_nodes: list[WorkflowSkeletonNode] = []
+        for raw in raw_nodes:
+            if not isinstance(raw, dict):
+                continue
+            skeleton_nodes.append(
+                WorkflowSkeletonNode(
+                    node_id=str(raw.get("node_id") or f"node-{len(skeleton_nodes)+1}"),
+                    phase=str(raw.get("phase") or "analysis"),
+                    role=str(raw.get("role") or "worker"),
+                    goal=str(raw.get("goal") or "Director-selected node."),
+                    depends_on=[str(item) for item in raw.get("depends_on", [])],
+                    expected_outputs=[str(item) for item in raw.get("expected_outputs", [])],
+                    experience_pattern_ids=self._filter_known_patterns(
+                        raw.get("experience_pattern_ids", selected_pattern_ids),
+                        selected_pattern_ids,
+                    ),
+                )
+            )
+        if not skeleton_nodes:
+            raise ValueError("Codex Director output yielded no valid skeleton nodes")
+        edges = []
+        for edge in raw_skeleton.get("edges", []):
+            if isinstance(edge, list | tuple) and len(edge) == 2:
+                edges.append((str(edge[0]), str(edge[1])))
+        skeleton = WorkflowSkeleton(
+            skeleton_id=f"skeleton-{uuid.uuid4().hex[:10]}",
+            topology=str(raw_skeleton.get("topology") or "director_selected"),
+            nodes=skeleton_nodes,
+            edges=edges,
+            rationale="Codex Director selected topology and agent allocation from experience candidates.",
+            agent_allocation=(
+                raw_skeleton.get("agent_allocation")
+                if isinstance(raw_skeleton.get("agent_allocation"), dict)
+                else {"total_agents": len(skeleton_nodes)}
+            ),
+            experience_pattern_ids=self._filter_known_patterns(
+                raw_skeleton.get("experience_pattern_ids", selected_pattern_ids),
+                selected_pattern_ids,
+            ),
+            experience_rationale=[
+                str(item) for item in raw_skeleton.get("experience_rationale", [])
+            ],
+        )
+        instantiations: list[NodeInstantiation] = []
+        for raw in raw_instantiations:
+            if not isinstance(raw, dict):
+                continue
+            skeleton_node_id = str(raw.get("skeleton_node_id") or "")
+            if not skeleton_node_id:
+                continue
+            command = raw.get("command")
+            command_list = [str(item) for item in command] if isinstance(command, list) else self._command_for(str(raw.get("phase") or ""), repo_policy)
+            pattern_ids = self._filter_known_patterns(
+                raw.get("experience_pattern_ids", skeleton.experience_pattern_ids),
+                selected_pattern_ids,
+            )
+            node = NodeCapsule(
+                node_id=str(raw.get("node_id") or f"{diagnosis.task_id}-{skeleton_node_id}"),
+                phase=str(raw.get("phase") or "analysis"),
+                goal=str(raw.get("goal") or "Director-selected node."),
+                command=command_list,
+                acceptance_criteria=[
+                    str(item) for item in raw.get("acceptance_criteria", [])
+                ] or [
+                    "Worker may only submit results.",
+                    "Overlooker acceptance must cite evidence_ref.",
+                ],
+                required_evidence=[
+                    str(item) for item in raw.get("required_evidence", ["diff", "test", "log"])
+                ],
+                experience_pattern_ids=pattern_ids,
+                executor_kind=str(raw.get("executor_kind") or "subprocess"),
+                prompt=str(raw.get("prompt") or raw.get("goal") or "Submit evidence for this Director-selected node."),
+            )
+            grounding = self._grounding_from_director(raw, node, repo_policy)
+            node.sandbox_profile = grounding.sandbox_profile.__dict__
+            instantiations.append(
+                NodeInstantiation(
+                    node=node,
+                    skeleton_node_id=skeleton_node_id,
+                    permission_grounding=grounding,
+                )
+            )
+        if not instantiations:
+            raise ValueError("Codex Director output yielded no valid node instantiations")
+        return WorkflowBlueprint(
+            blueprint_id=f"blueprint-{uuid.uuid4().hex[:10]}",
+            director_id=self.director_id,
+            task_diagnosis=diagnosis,
+            repo_policy=repo_policy,
+            workflow_skeleton=skeleton,
+            node_instantiations=instantiations,
+            experience_pattern_ids=skeleton.experience_pattern_ids,
+            director_mode="codex",
+            director_session_id=director_session_id,
+        )
+
+    def _grounding_from_director(
+        self,
+        raw: dict[str, Any],
+        node: NodeCapsule,
+        repo_policy: RepoPolicy,
+    ) -> PermissionGroundingReport:
+        raw_grounding = raw.get("permission_grounding")
+        if not isinstance(raw_grounding, dict):
+            return PermissionGrounder(repo_policy).derive(node, node.phase)
+        allowed_commands = raw_grounding.get("allowed_commands")
+        return PermissionGroundingReport(
+            node_id=node.node_id,
+            sandbox_profile=SandboxProfile(
+                network=str(raw_grounding.get("network") or "none"),
+                allowed_read_paths=[
+                    str(item) for item in raw_grounding.get("allowed_read_paths", ["."])
+                ],
+                allowed_write_paths=[
+                    str(item) for item in raw_grounding.get("allowed_write_paths", [])
+                ],
+                allowed_commands=(
+                    [
+                        [str(part) for part in command]
+                        for command in allowed_commands
+                        if isinstance(command, list)
+                    ]
+                    if isinstance(allowed_commands, list)
+                    else []
+                ),
+                justification=str(raw_grounding.get("justification") or "Director-provided grounding."),
+            ),
+            grounded_by=[
+                str(item) for item in raw_grounding.get("grounded_by", [])
+            ],
+        )
+
+    def _active_director_pattern_ids(
+        self,
+        output: dict[str, Any],
+        seed_matches: list[ExperienceMatch],
+    ) -> list[str]:
+        known = {match.pattern.pattern_id for match in seed_matches}
+        selected: list[str] = []
+        skeleton = output.get("workflow_skeleton")
+        raw_ids = skeleton.get("experience_pattern_ids", []) if isinstance(skeleton, dict) else []
+        for item in raw_ids:
+            pattern_id = str(item)
+            if pattern_id in known and pattern_id not in selected:
+                selected.append(pattern_id)
+        if selected:
+            return selected
+        return [match.pattern.pattern_id for match in seed_matches]
+
+    def _filter_known_patterns(self, raw: Any, known_ids: list[str]) -> list[str]:
+        values = raw if isinstance(raw, list) else known_ids
+        selected: list[str] = []
+        known = set(known_ids)
+        for item in values:
+            pattern_id = str(item)
+            if pattern_id in known and pattern_id not in selected:
+                selected.append(pattern_id)
+        return selected
 
     def _experience_guided_skeleton(
         self,
