@@ -99,6 +99,7 @@ class WorkflowCompiler:
             findings.extend(self._check_node(blueprint.repo_policy, inst.node, inst.permission_grounding))
 
         findings.extend(self._check_experience_usage(blueprint, experience_library))
+        findings.extend(self._check_director_deliberation(blueprint))
 
         accepted = not any(finding.severity == "error" for finding in findings)
         return CompiledWorkflow(
@@ -160,6 +161,82 @@ class WorkflowCompiler:
                     "missing_permission_grounding",
                     "PermissionGroundingReport must cite repo policy sources.",
                     node.node_id,
+                )
+            )
+        return findings
+
+    def _check_director_deliberation(self, blueprint: WorkflowBlueprint) -> list[CompilerFinding]:
+        findings: list[CompilerFinding] = []
+        if blueprint.director_mode != "codex":
+            return findings
+        skeleton = blueprint.workflow_skeleton
+        total_agents = skeleton.agent_allocation.get("total_agents")
+        if not isinstance(total_agents, int) or total_agents != len(skeleton.nodes):
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "director_agent_allocation_mismatch",
+                    "Codex Director must make total_agents equal the selected skeleton node count.",
+                )
+            )
+        alternatives = skeleton.alternative_skeletons
+        if len(alternatives) < 3:
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "director_missing_alternative_comparison",
+                    "Codex Director must compare at least three candidate skeletons before selecting one.",
+                )
+            )
+        selected_count = sum(
+            1 for alternative in alternatives if bool(alternative.get("selected"))
+        )
+        if selected_count != 1:
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "director_invalid_selected_alternative",
+                    "Codex Director must mark exactly one alternative skeleton as selected.",
+                )
+            )
+        if len(skeleton.deliberation_trace) < 2:
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "director_missing_deliberation_trace",
+                    "Codex Director must provide a deliberation trace comparing evidence and task signals.",
+                )
+            )
+        scaling = skeleton.scaling_policy
+        required_scaling_keys = {
+            "scale_triggers",
+            "max_planned_agents_for_current_task",
+            "expansion_strategy",
+            "requires_replan_when",
+        }
+        missing = sorted(required_scaling_keys - set(scaling))
+        if missing:
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "director_missing_scaling_policy",
+                    f"Codex Director scaling_policy is missing keys: {missing}",
+                )
+            )
+        elif not scaling.get("scale_triggers") or not scaling.get("expansion_strategy"):
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "director_scaling_policy_too_weak",
+                    "Codex Director scaling_policy must include non-empty scale triggers and expansion strategy.",
+                )
+            )
+        if len(skeleton.experience_rationale) < 2:
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "director_missing_experience_rationale",
+                    "Codex Director must explain why selected experience patterns fit the task.",
                 )
             )
         return findings

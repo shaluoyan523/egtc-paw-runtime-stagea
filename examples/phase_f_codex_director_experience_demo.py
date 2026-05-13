@@ -41,6 +41,10 @@ def main() -> int:
         "director_session_id": blueprint.director_session_id,
         "topology": blueprint.workflow_skeleton.topology,
         "agent_allocation": blueprint.workflow_skeleton.agent_allocation,
+        "alternative_skeletons": blueprint.workflow_skeleton.alternative_skeletons,
+        "scaling_policy": blueprint.workflow_skeleton.scaling_policy,
+        "deliberation_trace": blueprint.workflow_skeleton.deliberation_trace,
+        "experience_rationale": blueprint.workflow_skeleton.experience_rationale,
         "experience_pattern_ids": blueprint.experience_pattern_ids,
         "node_count": len(blueprint.workflow_skeleton.nodes),
         "node_roles": {
@@ -55,6 +59,9 @@ def main() -> int:
     print(json.dumps(output, indent=2, sort_keys=True))
     role_values = set(output["node_roles"].values())
     total_agents = int(output["agent_allocation"].get("total_agents", 0))
+    selected_alternatives = [
+        item for item in output["alternative_skeletons"] if item.get("selected")
+    ]
     return 0 if (
         compiled.accepted
         and output["director_mode"] == "codex"
@@ -62,6 +69,12 @@ def main() -> int:
         and output["experience_pattern_ids"]
         and output["node_count"] >= 3
         and total_agents == output["node_count"]
+        and len(output["alternative_skeletons"]) >= 3
+        and len(selected_alternatives) == 1
+        and len(output["deliberation_trace"]) >= 2
+        and output["scaling_policy"].get("scale_triggers")
+        and output["scaling_policy"].get("expansion_strategy")
+        and len(output["experience_rationale"]) >= 2
         and "explorer" in role_values
         and ("worker" in role_values or "coder" in role_values)
         and any(role in role_values for role in {"verifier", "worker"})

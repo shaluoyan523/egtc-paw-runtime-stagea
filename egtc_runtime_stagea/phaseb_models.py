@@ -50,6 +50,9 @@ class WorkflowSkeleton:
     edges: list[tuple[str, str]]
     rationale: str
     agent_allocation: dict[str, Any] = field(default_factory=dict)
+    alternative_skeletons: list[dict[str, Any]] = field(default_factory=list)
+    scaling_policy: dict[str, Any] = field(default_factory=dict)
+    deliberation_trace: list[str] = field(default_factory=list)
     experience_pattern_ids: list[str] = field(default_factory=list)
     experience_rationale: list[str] = field(default_factory=list)
 

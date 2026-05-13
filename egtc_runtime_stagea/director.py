@@ -236,6 +236,8 @@ class DirectorAgentV1:
             ],
             "director_rules": [
                 "Director must choose how many agents/nodes are needed.",
+                "Director must compare multiple candidate workflow skeletons before selecting one.",
+                "Director must define a scaling policy for tasks that exceed the current corpus.",
                 "Director must cite selected experience pattern ids.",
                 "Director must not request network or sandbox/permission expansion.",
                 "Director must keep verification read-only.",
@@ -315,6 +317,8 @@ You must choose and apply experience-library patterns yourself. This includes:
 - choosing how many worker agents/nodes to instantiate,
 - assigning roles to each node,
 - assigning experience_pattern_ids to the skeleton and each node.
+- comparing multiple candidate workflow skeletons before committing.
+- defining how the workflow should scale if the task needs tens or hundreds of agents.
 
 Output strict JSON:
 {
@@ -339,11 +343,33 @@ Output strict JSON:
     ]
   },
   "workflow_skeleton": {
-    "topology": "parallel_explore_then_single_writer_then_verify" | "linear",
+    "topology": "director_selected_topology_name",
     "agent_allocation": {
-      "total_agents": 4,
-      "roles": {"explorer": 2, "worker": 1, "verifier": 1}
+      "total_agents": 0,
+      "roles": {"role_name": 0},
+      "allocation_rationale": ["why this number of agents is enough for the current task"],
+      "agent_count_confidence": "low" | "medium" | "high"
     },
+    "alternative_skeletons": [
+      {
+        "name": "candidate topology name",
+        "estimated_agents": 0,
+        "strengths": ["..."],
+        "weaknesses": ["..."],
+        "selected": false,
+        "rejection_reason": "why this was not chosen, or empty when selected"
+      }
+    ],
+    "scaling_policy": {
+      "scale_triggers": ["signals that require more agents/nodes"],
+      "max_planned_agents_for_current_task": 0,
+      "expansion_strategy": ["how to add more explorers/workers/verifiers/overlookers if complexity grows"],
+      "requires_replan_when": ["conditions that force Director replan"]
+    },
+    "deliberation_trace": [
+      "compare evidence and task signals, then explain a planning judgment",
+      "explain why selected topology is better than alternatives"
+    ],
     "experience_pattern_ids": ["..."],
     "experience_rationale": ["..."],
     "nodes": [
@@ -385,7 +411,10 @@ Output strict JSON:
 
 Rules:
 - Use only pattern ids present in director_input.experience_candidates.
-- For a complex implementation task, prefer two explorers, one writer, and one verifier when matching experience supports it.
+- Do not assume a fixed number of agents. Derive total_agents from task complexity, uncertainty, dependency breadth, validation surface, risk, and available evidence.
+- The current task may need 1 agent, 4 agents, dozens of agents, or a staged plan that can grow toward hundreds. If the full scale is not needed now, explain the scale triggers.
+- Compare at least three candidate skeletons, including a small conservative plan, a medium plan, and a larger scalable plan.
+- Pick the smallest plan that has enough coverage, but explicitly describe when it should be expanded.
 - Node instantiations should normally use executor_kind="codex_cli" because workers are agents.
 - Do not request network access.
 - Do not write sensitive paths.
@@ -477,6 +506,19 @@ Rules:
                 if isinstance(raw_skeleton.get("agent_allocation"), dict)
                 else {"total_agents": len(skeleton_nodes)}
             ),
+            alternative_skeletons=(
+                raw_skeleton.get("alternative_skeletons")
+                if isinstance(raw_skeleton.get("alternative_skeletons"), list)
+                else []
+            ),
+            scaling_policy=(
+                raw_skeleton.get("scaling_policy")
+                if isinstance(raw_skeleton.get("scaling_policy"), dict)
+                else {}
+            ),
+            deliberation_trace=[
+                str(item) for item in raw_skeleton.get("deliberation_trace", [])
+            ],
             experience_pattern_ids=self._filter_known_patterns(
                 raw_skeleton.get("experience_pattern_ids", selected_pattern_ids),
                 selected_pattern_ids,
