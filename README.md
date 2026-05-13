@@ -129,6 +129,25 @@ python3 examples/phase_e_graph_patch_compiler_demo.py
 
 Phase E adds high-risk node handling, a second Overlooker gate, `DecisionConflict` / `ConflictResolution`, human-review and permission-review placeholders, and Phase E compiler validation for advanced GraphPatch operations.
 
+Run the Phase F experience-library demos:
+
+```bash
+python3 examples/phase_f_experience_catalog_demo.py
+python3 examples/phase_f_experience_library_demo.py
+python3 examples/phase_f_experience_compiler_negative_demo.py
+python3 examples/phase_f_codex_director_experience_demo.py
+```
+
+Export the agent-readable experience catalog:
+
+```bash
+python3 scripts/export_experience_catalog.py --output phasef_experience_catalog_data/catalog.json
+```
+
+The committed seed catalog is also available at `docs/experience_catalog_seed_v1.json` for agents that should read the pattern set without importing Python.
+
+Phase F adds an evolvable `ExperienceLibrary` of agent-readable orchestration patterns. The default catalog includes engineering runtime patterns and paper-derived patterns for proposer/aggregator layers, graph message passing, dynamic topology routing, learned routing gates, hierarchical memory planning, large-scale hierarchy, evolutionary or self-rectifying agent generation, cross-team governance, company-style role lifecycle, topology security controls, verification-aware planning, intervention debugging, context-efficient tool planning, disagreement-based recruitment, and protocol-aware communication.
+
 Phase B adds:
 
 - `DirectorAgentV1`: staged central planner named Director Agent.
@@ -159,9 +178,17 @@ Phase E adds:
 - Human-review and permission-escalation placeholders.
 - Phase E GraphPatch compiler validation for `insert_node`, `split_node`, `replace_worker`, `add_edge`, `remove_edge`, and `update_join_policy`.
 
-Deferred beyond Phase E:
+Phase F adds:
 
-- TPGO, textual gradients, optimization memory, targeted validation, and rollback retention belong to Phase F.
+- `ExperiencePattern`, `ExperienceObservation`, and `ExperienceUpdateProposal` schemas.
+- `ExperienceLibrary`: JSONL-backed seed, retrieve, observe, update-proposal, and catalog-export operations.
+- Agent-readable default orchestration patterns distilled from `多agent编排报告_20260421.zip`.
+- Director experience selection with pattern ids propagated into `TaskDiagnosis`, `WorkflowSkeleton`, and `NodeCapsule`.
+- Codex Director experience planning that compares alternatives, chooses agent allocation, and emits scaling policy before compiler validation.
+- Compiler checks that experience patterns can shape workflow structure but cannot request permissions, sandbox changes, network, or secrets.
+
+Deferred beyond Phase F:
+
 - Secret handling, redaction, artifact secret scanning, and per-run isolation boundaries belong to Phase G.
 
 Publish as a private GitHub repository:

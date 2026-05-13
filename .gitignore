@@ -20,6 +20,10 @@ phased_graph_data/
 phased_graph_negative_data/
 phased_codex_retry_fork_data/
 phasee_conflict_data/
+phasef_codex_director_data/
+phasef_experience_catalog_seed_tmp/
+phasef_experience_catalog_demo_data/
+phasef_experience_catalog_data/
 phasef_experience_data/
 
 # Local credentials/configuration must not be committed.

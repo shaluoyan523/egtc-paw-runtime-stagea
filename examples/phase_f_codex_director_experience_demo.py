@@ -32,7 +32,7 @@ def main() -> int:
         objective,
         repo_policy,
         workspace,
-        timeout_sec=300,
+        timeout_sec=600,
     )
     compiled = WorkflowCompiler().compile(blueprint, experience_library=library)
     output = {

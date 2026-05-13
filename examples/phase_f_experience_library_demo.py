@@ -130,7 +130,7 @@ def main() -> int:
     }
     print(json.dumps(output, indent=2, sort_keys=True))
     return 0 if (
-        output["seeded_count"] >= 5
+        output["seeded_count"] >= 22
         and output["director_topology"] == "parallel_explore_then_single_writer_then_verify"
         and output["director_match_count"] >= 3
         and output["compiler_accepted"]

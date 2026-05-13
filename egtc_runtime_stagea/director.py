@@ -214,7 +214,7 @@ class DirectorAgentV1:
         if self.experience_library is None:
             raise ValueError("plan_with_codex_director requires an ExperienceLibrary")
         workspace.mkdir(parents=True, exist_ok=True)
-        seed_matches = self.experience_library.retrieve(objective, limit=8)
+        seed_matches = self.experience_library.retrieve(objective, limit=16)
         input_packet = {
             "objective": objective,
             "repo_policy": to_plain_dict(repo_policy),
@@ -227,10 +227,10 @@ class DirectorAgentV1:
                     "matched_signals": match.matched_signals,
                     "recommended_structure": match.pattern.recommended_structure,
                     "required_evidence": match.pattern.required_evidence,
-                    "risk_notes": match.pattern.risk_notes,
+                    "risk_notes": match.pattern.risk_notes[:2],
                     "evidence_level": match.pattern.evidence_level,
                     "confidence_score": match.pattern.confidence_score,
-                    "source_refs": match.pattern.source_refs,
+                    "source_refs": match.pattern.source_refs[:3],
                 }
                 for match in seed_matches
             ],

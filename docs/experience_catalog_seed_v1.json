@@ -1,0 +1,1240 @@
+{
+  "pattern_count": 22,
+  "patterns": [
+    {
+      "anti_signals": [
+        "single source of truth",
+        "唯一可执行补丁",
+        "低延迟"
+      ],
+      "applicability_signals": [
+        "mixture",
+        "moa",
+        "aggregate",
+        "aggregator",
+        "ensemble",
+        "多模型",
+        "多候选",
+        "综合",
+        "汇总",
+        "评审多个方案"
+      ],
+      "confidence_score": 7.0,
+      "description": "Use layered proposer agents followed by aggregator agents when answer quality benefits from independent proposals and synthesis.",
+      "evidence_level": "direct",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-aggregation-layered-proposer-aggregator",
+      "pattern_type": "aggregation",
+      "recommended_structure": {
+        "agent_count_policy": "derive proposers from hypothesis diversity and aggregators from synthesis risk",
+        "join_policy": "aggregate_all_or_quorum_before_next_layer",
+        "layers": [
+          "proposal_layer",
+          "aggregation_layer",
+          "final_selection"
+        ],
+        "topology": "layered_proposer_aggregator"
+      },
+      "required_evidence": [
+        "candidate_outputs",
+        "aggregation_rationale",
+        "selected_output_ref"
+      ],
+      "risk_notes": [
+        "Aggregation can amplify correlated mistakes when proposers share the same blind spots.",
+        "Use bounded layers when latency or token budget is strict."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/mixture_of_agents_enhances_large_language_model_capabilities.html",
+        "多agent编排报告_20260421.zip: site/tumix_multi_agent_test_time_scaling_with_tool_use_mixture.html"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "aggregation",
+        "ensemble",
+        "proposer",
+        "synthesis",
+        "moa"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "固定流程",
+        "static dag only",
+        "合规审计要求固定路径"
+      ],
+      "applicability_signals": [
+        "dytopo",
+        "dynamic topology",
+        "semantic routing",
+        "动态拓扑",
+        "动态路由",
+        "语义匹配",
+        "uncertain route"
+      ],
+      "confidence_score": 6.5,
+      "description": "Adapt the collaboration topology during reasoning by semantically routing work to agents whose prior outputs best match the current subproblem.",
+      "evidence_level": "direct",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-dynamic-topology-semantic-routing",
+      "pattern_type": "dynamic_topology",
+      "recommended_structure": {
+        "agent_count_policy": "start_small_then_expand_when_route_entropy_remains_high",
+        "routing_policy": "semantic_match_to_active_agent_state",
+        "stability_guard": "require_replan_on_repeated_route_failure",
+        "topology_update": "bounded_edge_rewrite_with_trace"
+      },
+      "required_evidence": [
+        "route_scores",
+        "topology_changes",
+        "deliberation_trace"
+      ],
+      "risk_notes": [
+        "Dynamic routing needs explicit trace evidence so later validation can replay why an edge changed.",
+        "Repeated route churn should trigger Director replan instead of unbounded self-adjustment."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/dytopo_dynamic_topology_routing_for_multi_agent_reasoning_via_semantic_matching.html",
+        "多agent编排报告_20260421.zip: site/masrouter_learning_to_route_llms_for_multi_agent_systems.html"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "routing",
+        "dynamic",
+        "topology",
+        "semantic"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "无检查点",
+        "不能重跑",
+        "irreproducible"
+      ],
+      "applicability_signals": [
+        "dover",
+        "debugging",
+        "auto debugging",
+        "intervention",
+        "失败分析",
+        "自动调试",
+        "修复循环",
+        "checkpoint"
+      ],
+      "confidence_score": 6.5,
+      "description": "Use intervention-driven debugging when a multi-agent run fails: classify failure, patch the workflow or node prompt, and retry from the last sound checkpoint.",
+      "evidence_level": "direct",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-failure-intervention-debugging-loop",
+      "pattern_type": "failure_policy",
+      "recommended_structure": {
+        "debug_loop": [
+          "failure_classification",
+          "intervention_patch",
+          "checkpoint_fork",
+          "targeted_retry"
+        ],
+        "fork_policy": "reuse_accepted_upstream_state_and_replace_only_failed_branch",
+        "stop_policy": "escalate_after_same_failure_budget"
+      },
+      "required_evidence": [
+        "failure_type",
+        "intervention_patch",
+        "checkpoint_ref",
+        "retry_result"
+      ],
+      "risk_notes": [
+        "Debug interventions should be narrow and evidence-linked.",
+        "Retrying from the failed workspace instead of a sound checkpoint can preserve bad state."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/dover_intervention_driven_auto_debugging_for_llm_multi_agent_systems.html",
+        "多agent编排报告_20260421.zip: site/open_source_failure_escalation_retry_and_fallback.html"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "debugging",
+        "retry",
+        "checkpoint",
+        "overlooker"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "one shot",
+        "不重试"
+      ],
+      "applicability_signals": [
+        "retry",
+        "失败",
+        "超时",
+        "budget",
+        "livelock",
+        "deadlock",
+        "重试",
+        "重规划"
+      ],
+      "confidence_score": 8.0,
+      "description": "Bound retries with same-failure counters, attempt limits, timeout/resource reports, and explicit stop or replan events.",
+      "evidence_level": "strong",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-failure-watchdog-budget",
+      "pattern_type": "failure_policy",
+      "recommended_structure": {
+        "escalation": [
+          "abort_livelock",
+          "request_director_replan"
+        ],
+        "guards": [
+          "max_attempts",
+          "retry_budget",
+          "max_same_failure_retries"
+        ]
+      },
+      "required_evidence": [
+        "resource_report",
+        "sandbox_events",
+        "failure_type"
+      ],
+      "risk_notes": [
+        "Do not retry indefinitely.",
+        "Fork retries from accepted upstream workspaces when possible."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/open_source_stop_timeout_watchdog_and_budget_guards.html",
+        "多agent编排报告_20260421.zip: site/open_source_failure_escalation_retry_and_fallback.html"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "retry",
+        "watchdog",
+        "budget",
+        "replan"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "无评价指标",
+        "不可重复实验",
+        "生产高风险热路径"
+      ],
+      "applicability_signals": [
+        "evoagent",
+        "evolutionary",
+        "agent generation",
+        "自动生成agent",
+        "角色搜索",
+        "优化编排",
+        "metric"
+      ],
+      "confidence_score": 5.5,
+      "description": "Generate and select agent variants through evolutionary search when the right role composition is unknown and can be evaluated by a metric.",
+      "evidence_level": "direct",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-generation-evolutionary-agent-search",
+      "pattern_type": "agent_generation",
+      "recommended_structure": {
+        "generation_loop": [
+          "propose_agent_variants",
+          "evaluate_variants",
+          "select_or_mutate",
+          "freeze_winner"
+        ],
+        "promotion_gate": "compiler_and_overlooker_acceptance_before_runtime_use",
+        "selection_policy": "metric_improvement_with_budget_limit"
+      },
+      "required_evidence": [
+        "variant_specs",
+        "evaluation_metric",
+        "selection_rationale"
+      ],
+      "risk_notes": [
+        "Generated agents remain draft until promoted by review and compiler validation.",
+        "Evolutionary search needs a clear metric; otherwise it becomes expensive prompt churn."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/evoagent_towards_automatic_multi_agent_generation_via_evolutionary_algorithms.html",
+        "多agent编排报告_20260421.zip: site/comas_co_evolving_multi_agent_systems_via_interaction_rewards.html"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "agent-generation",
+        "evolution",
+        "optimization",
+        "metric"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "strict manual only",
+        "不可自修改",
+        "审计不可缺失"
+      ],
+      "applicability_signals": [
+        "mas2",
+        "self-generative",
+        "self-configuring",
+        "self-rectifying",
+        "自生成",
+        "自配置",
+        "自纠错",
+        "自动修正"
+      ],
+      "confidence_score": 5.5,
+      "description": "Let the system propose configuration, execution, and rectification changes, but require explicit validation gates before accepting self-changes.",
+      "evidence_level": "direct",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-generation-self-configuring-rectifying-mas",
+      "pattern_type": "agent_generation",
+      "recommended_structure": {
+        "acceptance_gate": "structured_patch_compiler_then_overlooker",
+        "rollback_policy": "retain_last_accepted_configuration_checkpoint",
+        "self_cycle": [
+          "generate_structure",
+          "configure_roles",
+          "execute",
+          "rectify_from_feedback"
+        ]
+      },
+      "required_evidence": [
+        "configuration_delta",
+        "feedback_refs",
+        "acceptance_gate_result"
+      ],
+      "risk_notes": [
+        "Self-configuration must create proposals, not directly mutate trusted runtime policy.",
+        "Repeated self-rectification with the same failure type should force Director replan."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/mas2_self_generative_self_configuring_self_rectifying_multi_agent_systems.html",
+        "多agent编排报告_20260421.zip: site/dover_intervention_driven_auto_debugging_for_llm_multi_agent_systems.html"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "self-configuring",
+        "rectification",
+        "feedback",
+        "proposal"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "无角色区分",
+        "只需单步修复",
+        "freeform brainstorm"
+      ],
+      "applicability_signals": [
+        "orgagent",
+        "company",
+        "metagpt",
+        "chatdev",
+        "软件公司",
+        "角色分工",
+        "产品",
+        "工程",
+        "qa"
+      ],
+      "confidence_score": 6.0,
+      "description": "Model a software task as company-like roles with staged artifacts, role-specific responsibilities, and review/promotion boundaries.",
+      "evidence_level": "mixed",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-governance-company-role-lifecycle",
+      "pattern_type": "governance",
+      "recommended_structure": {
+        "artifact_promotions": [
+          "requirements",
+          "design_notes",
+          "patch",
+          "test_report",
+          "release_summary"
+        ],
+        "ownership_policy": "each role owns outputs but Director controls workflow promotion",
+        "role_lifecycle": [
+          "planning",
+          "design",
+          "implementation",
+          "qa",
+          "release_review"
+        ]
+      },
+      "required_evidence": [
+        "role_assignments",
+        "artifact_promotions",
+        "review_records"
+      ],
+      "risk_notes": [
+        "Company metaphors can add ceremony; use only when staged artifacts reduce ambiguity.",
+        "Role separation should not create multiple unsynchronized writers over the same files."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/orgagent_organize_your_multi_agent_system_like_a_company.html",
+        "多agent编排报告_20260421.zip: research/software_company_orchestration_source.md",
+        "多agent编排报告_20260421.zip: site/metagpt_orchestration_and_agent_structure.html",
+        "多agent编排报告_20260421.zip: site/chatdev_orchestration_and_agent_structure.html"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "role-template",
+        "company",
+        "artifact",
+        "qa"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "单人任务",
+        "无模块边界",
+        "tight write conflict"
+      ],
+      "applicability_signals": [
+        "cross-team",
+        "team",
+        "多团队",
+        "跨团队",
+        "subteam",
+        "团队协作",
+        "large project"
+      ],
+      "confidence_score": 6.0,
+      "description": "Use cross-team orchestration when independent teams must solve different parts and exchange bounded summaries through team leads.",
+      "evidence_level": "direct",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-governance-cross-team-orchestration",
+      "pattern_type": "governance",
+      "recommended_structure": {
+        "coordination_layer": "Director receives team lead reports and emits graph patches when needed",
+        "handoff_policy": "team_summary_and_artifact_refs_only_across_boundaries",
+        "team_units": [
+          "team_lead",
+          "specialist_workers",
+          "team_verifier"
+        ]
+      },
+      "required_evidence": [
+        "team_boundary_map",
+        "team_reports",
+        "cross_team_handoff_refs"
+      ],
+      "risk_notes": [
+        "Cross-team work needs clear ownership boundaries before write nodes run.",
+        "Team leads should summarize evidence rather than exposing every private scratch note."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/multi_agent_collaboration_via_cross_team_orchestration.html",
+        "多agent编排报告_20260421.zip: site/open_source_coordinator_shells_and_team_hierarchies.html"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "team",
+        "governance",
+        "hierarchy",
+        "handoff"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "自由聊天即可",
+        "single agent",
+        "no interaction contract"
+      ],
+      "applicability_signals": [
+        "protocol",
+        "agent-to-agent",
+        "a2a",
+        "message order",
+        "通信协议",
+        "协议",
+        "角色承诺"
+      ],
+      "confidence_score": 5.5,
+      "description": "Use explicit interaction protocols for agent-to-agent communication when correctness depends on legal message order, role commitments, or protocol safety.",
+      "evidence_level": "direct",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-governance-protocol-aware-agent-communication",
+      "pattern_type": "governance",
+      "recommended_structure": {
+        "audit_policy": "persist_protocol_events_as_trace_evidence",
+        "protocol_spec": [
+          "roles",
+          "allowed_message_types",
+          "turn_order",
+          "termination_condition"
+        ],
+        "runtime_check": "reject_messages_outside_protocol_contract"
+      },
+      "required_evidence": [
+        "protocol_spec",
+        "message_trace",
+        "termination_event"
+      ],
+      "risk_notes": [
+        "Protocol constraints help reproducibility but can slow exploratory collaboration.",
+        "Protocol validation should be separate from model judgment."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/ahoy_llms_enacting_multiagent_interaction_protocols.html",
+        "多agent编排报告_20260421.zip: site/a2asecbench_a_protocol_aware_security_benchmark_for_agent_to_agent_multi_agent_systems.html",
+        "多agent编排报告_20260421.zip: site/marble_coordination_modes_and_iteration_control.html"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "protocol",
+        "communication",
+        "audit",
+        "a2a"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "pure chat",
+        "无产物"
+      ],
+      "applicability_signals": [
+        "artifact",
+        "evidence",
+        "工件",
+        "证据",
+        "swe",
+        "patch",
+        "代码"
+      ],
+      "confidence_score": 6.0,
+      "description": "Use artifact-chain handoff for software engineering nodes where the next step consumes code, logs, test output, and evidence refs.",
+      "evidence_level": "mixed",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-handoff-artifact-chain",
+      "pattern_type": "handoff",
+      "recommended_structure": {
+        "handoff_unit": "artifact_chain",
+        "receiver": "next_graph_node_or_overlooker",
+        "state_transfer": [
+          "workspace_diff",
+          "test_report",
+          "evidence_ref"
+        ]
+      },
+      "required_evidence": [
+        "diff",
+        "test",
+        "log"
+      ],
+      "risk_notes": [
+        "Artifact handoff is not a substitute for checkpointed workspace state."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/handoff_contracts_and_state_transfer.html",
+        "多agent编排报告_20260421.zip: research/software_company_orchestration_source.md"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "handoff",
+        "artifact",
+        "state"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "stateless",
+        "一次性",
+        "no historical evidence"
+      ],
+      "applicability_signals": [
+        "stackplanner",
+        "hierarchical",
+        "memory",
+        "经验",
+        "经验库",
+        "层级规划",
+        "任务分解",
+        "reuse prior"
+      ],
+      "confidence_score": 7.0,
+      "description": "Use a centralized hierarchical planner backed by task experience memory when the system must decompose work and reuse prior plans.",
+      "evidence_level": "direct",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-memory-hierarchical-task-experience-planner",
+      "pattern_type": "memory_planning",
+      "recommended_structure": {
+        "memory_use": [
+          "retrieve_patterns",
+          "compare_prior_outcomes",
+          "record_observations"
+        ],
+        "planner_layers": [
+          "task_diagnosis",
+          "subtask_tree",
+          "experience_retrieval",
+          "execution_plan"
+        ],
+        "replan_policy": "update subtask tree when memory evidence conflicts with current validation"
+      },
+      "required_evidence": [
+        "retrieved_experience_refs",
+        "subtask_tree",
+        "memory_update_refs"
+      ],
+      "risk_notes": [
+        "Experience memory should influence structure but must not bypass compiler checks.",
+        "Stale experience needs versioning and demotion when runtime evidence degrades."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/stackplanner_a_centralized_hierarchical_multi_agent_system_with_task_experience_memory_management.html",
+        "多agent编排报告_20260421.zip: site/scaling_teams_or_scaling_time_memory_enabled_lifelong_learning_in_llm_multi_agent_systems.html"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "memory",
+        "hierarchical",
+        "planner",
+        "experience"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "高度并行",
+        "独立模块很多",
+        "urgent wall clock"
+      ],
+      "applicability_signals": [
+        "scaling time",
+        "lifelong",
+        "memory enabled",
+        "长期任务",
+        "持续学习",
+        "上下文连续",
+        "历史记忆"
+      ],
+      "confidence_score": 6.0,
+      "description": "Prefer richer memory and staged time scaling before adding many agents when the bottleneck is continuity rather than independent parallel work.",
+      "evidence_level": "direct",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-memory-scale-time-before-team-size",
+      "pattern_type": "memory_planning",
+      "recommended_structure": {
+        "memory_layers": [
+          "run_trace",
+          "accepted_artifacts",
+          "experience_observations"
+        ],
+        "promotion_policy": "only accepted observations update reusable memory",
+        "scaling_choice": "extend_memory_and_iteration_depth_before_team_size"
+      },
+      "required_evidence": [
+        "memory_refs",
+        "iteration_trace",
+        "accepted_observations"
+      ],
+      "risk_notes": [
+        "Adding more agents can hurt if the task mostly needs continuity and accumulated context.",
+        "Memory growth needs pruning and confidence decay to avoid stale plans dominating."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/scaling_teams_or_scaling_time_memory_enabled_lifelong_learning_in_llm_multi_agent_systems.html",
+        "多agent编排报告_20260421.zip: site/on_the_uncertainty_of_large_language_model_based_multi_agent_systems.html"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "memory",
+        "scaling",
+        "lifelong",
+        "context"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "不可测试",
+        "纯主观创作",
+        "no evaluator"
+      ],
+      "applicability_signals": [
+        "verification-aware",
+        "verifiable",
+        "验证优先",
+        "可验证",
+        "测试证据",
+        "校验",
+        "acceptance"
+      ],
+      "confidence_score": 7.0,
+      "description": "Plan tasks around verifiability by creating evidence targets before worker execution and routing uncertain claims to explicit checks.",
+      "evidence_level": "direct",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-review-verification-aware-planning",
+      "pattern_type": "review_loop",
+      "recommended_structure": {
+        "gate": "overlooker_acceptance_after_validator",
+        "planning_order": [
+          "define_acceptance",
+          "map_evidence_targets",
+          "execute",
+          "verify",
+          "repair_or_accept"
+        ],
+        "uncertainty_policy": "claims_without_evidence_become_verification_nodes"
+      },
+      "required_evidence": [
+        "acceptance_criteria",
+        "evidence_targets",
+        "validator_findings"
+      ],
+      "risk_notes": [
+        "Verification-aware planning can add overhead for low-risk exploratory work.",
+        "Claims without evidence should not be promoted into accepted artifacts."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/verification_aware_planning_for_multi_agent_systems.html",
+        "多agent编排报告_20260421.zip: site/benchmark_judge_and_evaluator_loop.html",
+        "多agent编排报告_20260421.zip: site/engineering_review_queues_and_validation_gates.html"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "verification",
+        "review",
+        "evidence",
+        "acceptance"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "无需测试",
+        "no review"
+      ],
+      "applicability_signals": [
+        "review",
+        "overlooker",
+        "校验",
+        "验证",
+        "返工",
+        "失败",
+        "retry",
+        "rework"
+      ],
+      "confidence_score": 8.0,
+      "description": "Treat review and rework as a first-class loop with explicit evidence citation and re-entry target.",
+      "evidence_level": "strong",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-role-overlooker-review-rework",
+      "pattern_type": "review_loop",
+      "recommended_structure": {
+        "gate": "overlooker_acceptance",
+        "reentry": [
+          "retry_same_node",
+          "request_director_replan"
+        ],
+        "review_object": "evidence_bundle"
+      },
+      "required_evidence": [
+        "evidence_ref",
+        "validator_refs",
+        "overlooker_report"
+      ],
+      "risk_notes": [
+        "Review must cite evidence_ref.",
+        "Repeated same-failure retries should demote the pattern or request replan."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/engineering_review_and_rework_loops.html",
+        "多agent编排报告_20260421.zip: site/open_source_failure_escalation_retry_and_fallback.html"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "overlooker",
+        "review",
+        "retry",
+        "validation"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "一致证据充分",
+        "low uncertainty",
+        "no extra budget"
+      ],
+      "applicability_signals": [
+        "disagreement",
+        "分歧",
+        "争议",
+        "tool recruitment",
+        "招募",
+        "uncertainty",
+        "hidden profile"
+      ],
+      "confidence_score": 5.5,
+      "description": "Recruit additional agents or tools when independent agents disagree in a way that exposes missing evidence or capability gaps.",
+      "evidence_level": "direct",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-routing-disagreement-based-recruitment",
+      "pattern_type": "routing",
+      "recommended_structure": {
+        "recruitment_policy": "add_specialist_or_tool_node_for_missing_capability",
+        "resolution_gate": "aggregator_or_overlooker_compares_new_evidence_before_acceptance",
+        "trigger": "material_disagreement_on_required_output_or_evidence"
+      },
+      "required_evidence": [
+        "disagreement_summary",
+        "recruitment_reason",
+        "resolution_evidence"
+      ],
+      "risk_notes": [
+        "Disagreement alone is not a reason to expand; the Director should identify missing evidence or capability.",
+        "Recruitment should be bounded by budget and compiled into the graph."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/dart_leveraging_multi_agent_disagreement_for_tool_recruitment_in_multimodal_reasoning.html",
+        "多agent编排报告_20260421.zip: site/hiddenbench_assessing_collective_reasoning_in_multi_agent_llms_via_hidden_profile_tasks.html",
+        "多agent编排报告_20260421.zip: site/on_the_uncertainty_of_large_language_model_based_multi_agent_systems.html"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "disagreement",
+        "routing",
+        "recruitment",
+        "uncertainty"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "需要完整人工审计",
+        "no training data",
+        "固定角色就足够"
+      ],
+      "applicability_signals": [
+        "masrouter",
+        "agentgate",
+        "latentgate",
+        "router",
+        "gate",
+        "路由器",
+        "低延迟",
+        "专家选择",
+        "specialist selection"
+      ],
+      "confidence_score": 6.5,
+      "description": "Use learned or lightweight gate routing when the main decision is which agent, model, or tool specialist should receive the next task.",
+      "evidence_level": "direct",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-routing-learned-mas-gates",
+      "pattern_type": "routing",
+      "recommended_structure": {
+        "fallback_policy": "use Director deterministic graph edge when routing confidence is low",
+        "router_input": [
+          "task_features",
+          "agent_capability_summary",
+          "recent_outcome_stats"
+        ],
+        "router_output": [
+          "recipient_agent_ids",
+          "routing_confidence",
+          "fallback_route"
+        ]
+      },
+      "required_evidence": [
+        "routing_decision",
+        "confidence_score",
+        "fallback_reason"
+      ],
+      "risk_notes": [
+        "Learned routers should not be allowed to expand authority; they only choose among compiled recipients.",
+        "Low-confidence routing must fall back to Director or compiler-approved graph edges."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/masrouter_learning_to_route_llms_for_multi_agent_systems.html",
+        "多agent编排报告_20260421.zip: site/agentgate_a_lightweight_structured_routing_engine_for_the_internet_of_agents.html",
+        "多agent编排报告_20260421.zip: site/latentgate_low_latency_semantic_routing_via_frozen_backbone_probing_of_small_language_models.html"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "routing",
+        "gate",
+        "specialist",
+        "low-latency"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "单步",
+        "linear only"
+      ],
+      "applicability_signals": [
+        "routing",
+        "调度",
+        "任务图",
+        "graph",
+        "依赖",
+        "worker",
+        "specialist"
+      ],
+      "confidence_score": 6.5,
+      "description": "Select routing surfaces by task shape: graph edges for explicit dependencies, message/team routing for deliberation, planner recipient routing for tool-specialized workers.",
+      "evidence_level": "mixed",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-routing-message-or-graph-edge",
+      "pattern_type": "routing",
+      "recommended_structure": {
+        "deliberation_tasks": "message_publication",
+        "dependency_tasks": "graph_edges",
+        "tool_specialized_tasks": "planner_recipient_set"
+      },
+      "required_evidence": [
+        "workflow_skeleton",
+        "edges",
+        "node_roles"
+      ],
+      "risk_notes": [
+        "Routing choice must be compiled against known node ids and DAG rules."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/open_source_router_scheduler_task_graph.html",
+        "多agent编排报告_20260421.zip: research/open_source_control_loops_source.md"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "routing",
+        "scheduler",
+        "graph"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "小任务",
+        "single file",
+        "低风险局部改动"
+      ],
+      "applicability_signals": [
+        "megaagent",
+        "large scale",
+        "hundreds",
+        "dozens",
+        "大规模",
+        "上百",
+        "数十",
+        "复杂到超出预期",
+        "scale"
+      ],
+      "confidence_score": 6.5,
+      "description": "Scale to large agent teams through staged hierarchy, delegated subgroups, and promotion of local results to higher-level synthesis.",
+      "evidence_level": "direct",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-scaling-large-dynamic-hierarchy",
+      "pattern_type": "scaling_policy",
+      "recommended_structure": {
+        "agent_count_policy": "Director estimates current need and declares replan thresholds for larger tiers",
+        "coordination_policy": "subteam_leads_summarize_to_single_director",
+        "expansion_triggers": [
+          "module_count_growth",
+          "independent_subproblem_growth",
+          "validation_surface_growth"
+        ],
+        "scaling_levels": [
+          "single_team",
+          "multi_team",
+          "hierarchical_program"
+        ]
+      },
+      "required_evidence": [
+        "agent_allocation",
+        "scale_triggers",
+        "subteam_boundaries"
+      ],
+      "risk_notes": [
+        "Large teams need explicit subteam boundaries to avoid duplicate writes and uncontrolled communication.",
+        "Scaling should be staged; a larger plan is held as a replan option until triggers are met."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/megaagent_a_large_scale_autonomous_llm_based_multi_agent_system_without_predefined_sops.html",
+        "多agent编排报告_20260421.zip: site/scaling_large_language_model_based_multi_agent_collaboration.html",
+        "多agent编排报告_20260421.zip: site/towards_a_science_of_scaling_agent_systems.html"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "scaling",
+        "hierarchy",
+        "large-team",
+        "director"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "公开数据",
+        "no trust boundary",
+        "toy benchmark"
+      ],
+      "applicability_signals": [
+        "security",
+        "privacy",
+        "leakage",
+        "collusion",
+        "attack",
+        "隐私",
+        "泄漏",
+        "安全",
+        "通信攻击"
+      ],
+      "confidence_score": 6.5,
+      "description": "Choose topology and communication exposure with privacy leakage, collusion, and communication-attack risks in mind.",
+      "evidence_level": "direct",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-security-topology-privacy-leakage-control",
+      "pattern_type": "security_policy",
+      "recommended_structure": {
+        "review_gate": "security_overlooker_for_sensitive_cross_agent_handoffs",
+        "risk_model": [
+          "memory_leakage",
+          "collusion",
+          "communication_attack",
+          "sensitive_artifact_exposure"
+        ],
+        "topology_preference": "least_exposure_edges_with_auditable_handoffs"
+      },
+      "required_evidence": [
+        "trust_boundary_map",
+        "handoff_refs",
+        "security_review_result"
+      ],
+      "risk_notes": [
+        "Do not broadcast sensitive artifacts when a point-to-point handoff is enough.",
+        "Security patterns constrain communication shape; they do not grant new authority."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/topology_matters_measuring_memory_leakage_in_multi_agent_llms.html",
+        "多agent编排报告_20260421.zip: site/g_safeguard_a_topology_guided_security_lens_and_treatment_on_llm_based_multi_agent_systems.html",
+        "多agent编排报告_20260421.zip: site/agentleak_a_full_stack_benchmark_for_privacy_leakage_in_multi_agent_llm_systems.html",
+        "多agent编排报告_20260421.zip: site/red_teaming_llm_multi_agent_systems_via_communication_attacks.html"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "security",
+        "privacy",
+        "topology",
+        "handoff"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "no tools",
+        "pure reasoning",
+        "small context"
+      ],
+      "applicability_signals": [
+        "tool use",
+        "tool planning",
+        "dfsdt",
+        "context efficient",
+        "工具调用",
+        "工具规划",
+        "长链工具",
+        "搜索"
+      ],
+      "confidence_score": 5.5,
+      "description": "Use context-efficient depth-first tool planning when the task requires many tool calls and only a narrow frontier should stay in context.",
+      "evidence_level": "direct",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-tool-planning-context-efficient-search",
+      "pattern_type": "tool_planning",
+      "recommended_structure": {
+        "context_policy": "keep_active_frontier_and_artifact_refs_not_full_trace",
+        "handoff_policy": "tool_results_become_artifact_refs_for_next_agent",
+        "tool_plan": [
+          "select_tool_frontier",
+          "execute_bounded_step",
+          "summarize_state",
+          "continue_or_backtrack"
+        ]
+      },
+      "required_evidence": [
+        "tool_plan",
+        "tool_result_refs",
+        "state_summary"
+      ],
+      "risk_notes": [
+        "Tool planning needs strict result summarization or context will fill with stale traces.",
+        "Backtracking must not discard accepted artifacts without an explicit rollback event."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/smurfs_multi_agent_system_using_context_efficient_dfsdt_for_tool_planning.html",
+        "多agent编排报告_20260421.zip: site/tool_and_message_routing.html"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "tool-planning",
+        "context",
+        "search",
+        "handoff"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "线性即可",
+        "single chain",
+        "无依赖"
+      ],
+      "applicability_signals": [
+        "graph of agents",
+        "message passing",
+        "非线性",
+        "多依赖",
+        "图结构",
+        "协作推理",
+        "intermediate"
+      ],
+      "confidence_score": 7.0,
+      "description": "Represent collaboration as a typed agent graph with message passing when dependencies are non-linear and intermediate reasoning must be recombined.",
+      "evidence_level": "direct",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-topology-graph-of-agents-message-passing",
+      "pattern_type": "topology",
+      "recommended_structure": {
+        "edge_policy": "typed_messages_between_dependency_neighbors",
+        "join_policy": "compile_edges_before_execution",
+        "nodes": [
+          "specialist_agents",
+          "intermediate_aggregation",
+          "final_solver"
+        ],
+        "topology": "graph_message_passing"
+      },
+      "required_evidence": [
+        "workflow_skeleton",
+        "edges",
+        "message_contracts"
+      ],
+      "risk_notes": [
+        "Graph edges must remain acyclic or have bounded iteration semantics.",
+        "Message contracts should prevent hidden state from leaking across unrelated branches."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: site/graph_of_agents_a_graph_based_framework_for_multi_agent_llm_collaboration.html",
+        "多agent编排报告_20260421.zip: site/topology_matters_measuring_memory_leakage_in_multi_agent_llms.html"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "graph",
+        "topology",
+        "message",
+        "collaboration"
+      ],
+      "version": 1
+    },
+    {
+      "anti_signals": [
+        "简单",
+        "single file",
+        "只读总结"
+      ],
+      "applicability_signals": [
+        "复杂",
+        "complex",
+        "swe",
+        "多 worker",
+        "多agent",
+        "测试",
+        "验证",
+        "实现",
+        "修改"
+      ],
+      "confidence_score": 7.0,
+      "description": "Use parallel read-only exploration before a single writer and verification gate for complex engineering work.",
+      "evidence_level": "strong",
+      "failure_count": 0,
+      "last_updated_at": 0.0,
+      "pattern_id": "seed-topology-parallel-explore-implement-verify",
+      "pattern_type": "topology",
+      "recommended_structure": {
+        "join_policy": "all_explorers_before_writer",
+        "nodes": [
+          "explore",
+          "implement",
+          "verify"
+        ],
+        "topology": "parallel_explore_then_single_writer_then_verify"
+      },
+      "required_evidence": [
+        "diff",
+        "test",
+        "log",
+        "sandbox_events",
+        "resource_report"
+      ],
+      "risk_notes": [
+        "Parallelism should be read-only before the writer lock.",
+        "Do not create extra workers when the task has no dependency or uncertainty signal."
+      ],
+      "source_refs": [
+        "多agent编排报告_20260421.zip: research/comparison_matrix_source.md",
+        "多agent编排报告_20260421.zip: site/open_source_router_scheduler_task_graph.html"
+      ],
+      "status": "active",
+      "success_count": 0,
+      "tags": [
+        "director",
+        "workflow",
+        "parallel",
+        "worker"
+      ],
+      "version": 1
+    }
+  ],
+  "schema": "egtc.experience.catalog.v1"
+}
