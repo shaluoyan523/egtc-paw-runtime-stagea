@@ -19,6 +19,7 @@ phasec_complex_reports/
 phased_graph_data/
 phased_graph_negative_data/
 phased_codex_retry_fork_data/
+phasee_conflict_data/
 
 # Local credentials/configuration must not be committed.
 .env

@@ -12,11 +12,14 @@ from typing import Any
 from .artifact_store import ArtifactStore
 from .codex_wrapper import CodexExecWrapper
 from .compiler import WorkflowCompiler
+from .conflict import ConflictResolver
 from .event_log import EventLog
 from .evidence import EvidenceCollector
 from .identity import IdentityService
 from .models import (
     CompiledGraphPatch,
+    ConflictResolution,
+    DecisionConflict,
     EvidenceBundle,
     GraphPatch,
     GraphPatchOperation,
@@ -52,6 +55,8 @@ class GraphRunSpec:
     overlooker_mode: str = "deterministic"
     director_mode: str = "deterministic"
     replan_budget: int = 0
+    phase: str = "D"
+    second_overlooker_mode: str = "deterministic"
 
 
 @dataclass
@@ -77,6 +82,10 @@ class GraphNodeRecord:
     overlooker_failure_type: str | None = None
     overlooker_confidence: str | None = None
     release_overlooker: bool = False
+    high_risk: bool = False
+    second_overlooker_report_ref: str | None = None
+    conflict_resolution: dict[str, Any] | None = None
+    conflict_history: list[dict[str, Any]] = field(default_factory=list)
     current_workspace: str | None = None
     accepted_workspace: str | None = None
     fork_source_node_id: str | None = None
@@ -96,6 +105,9 @@ class NodeExecutionResult:
     evidence: EvidenceBundle
     validator_reports: list[ValidatorReport]
     overlooker_report: OverlookerReport
+    second_overlooker_report: OverlookerReport | None
+    conflict: DecisionConflict | None
+    conflict_resolution: ConflictResolution | None
     workspace_diff: dict[str, list[str]]
 
 
@@ -135,6 +147,7 @@ class GraphRuntime:
             self.artifacts, self.director_actor, self.director_token
         )
         self.compiler = WorkflowCompiler()
+        self.conflict_resolver = ConflictResolver()
         self.collector = EvidenceCollector(
             self.artifacts, self.runtime_actor, self.runtime_token
         )
@@ -247,6 +260,8 @@ class GraphRuntime:
                         run_id,
                         nodes[candidate],
                         spec.overlooker_mode,
+                        spec.phase,
+                        spec.second_overlooker_mode,
                         fork_plan,
                     )
                     active[future] = candidate
@@ -319,6 +334,8 @@ class GraphRuntime:
         run_id: str,
         node: NodeCapsule,
         overlooker_mode: str,
+        phase: str,
+        second_overlooker_mode: str,
         fork_plan: WorkspaceForkPlan,
     ) -> NodeExecutionResult:
         workspace = self._prepare_workspace(node, fork_plan)
@@ -341,7 +358,7 @@ class GraphRuntime:
             "DeterministicValidationCompleted",
             {"reports": to_plain_dict(validator_reports)},
         )
-        if overlooker_mode == "codex":
+        if overlooker_mode in {"codex", "codex_phase_e"}:
             overlooker_report = self.overlooker.review(
                 node,
                 evidence,
@@ -363,11 +380,60 @@ class GraphRuntime:
                 validator_reports,
                 worker_result,
             )
-        final_state = (
-            NodeState.NODE_ACCEPTED.value
-            if overlooker_report.verdict == "pass"
-            else NodeState.NODE_REJECTED.value
-        )
+        second_overlooker_report: OverlookerReport | None = None
+        conflict: DecisionConflict | None = None
+        resolution: ConflictResolution | None = None
+        high_risk = self._is_high_risk(node)
+        if self._phase_e_enabled(phase, overlooker_mode) and high_risk:
+            second_overlooker_report = self._second_overlooker_review(
+                run_id,
+                node,
+                evidence,
+                validator_reports,
+                worker_result,
+                workspace_diff,
+                fork_plan,
+                second_overlooker_mode,
+            )
+            conflict = self._build_conflict(
+                run_id,
+                node,
+                validator_reports,
+                [overlooker_report, second_overlooker_report],
+                high_risk,
+            )
+            resolution = self.conflict_resolver.resolve(conflict)
+            self._record(
+                run_id,
+                node.node_id,
+                "DecisionConflictResolved",
+                {
+                    "conflict": to_plain_dict(conflict),
+                    "resolution": to_plain_dict(resolution),
+                },
+            )
+        elif self._phase_e_enabled(phase, overlooker_mode):
+            conflict = self._build_conflict(
+                run_id,
+                node,
+                validator_reports,
+                [overlooker_report],
+                high_risk,
+            )
+            resolution = self.conflict_resolver.resolve(conflict)
+
+        if resolution is not None:
+            final_state = (
+                NodeState.NODE_ACCEPTED.value
+                if resolution.release_node
+                else NodeState.NODE_REJECTED.value
+            )
+        else:
+            final_state = (
+                NodeState.NODE_ACCEPTED.value
+                if overlooker_report.verdict == "pass"
+                else NodeState.NODE_REJECTED.value
+            )
         return NodeExecutionResult(
             node_id=node.node_id,
             attempt=fork_plan.attempt,
@@ -377,6 +443,9 @@ class GraphRuntime:
             evidence=evidence,
             validator_reports=validator_reports,
             overlooker_report=overlooker_report,
+            second_overlooker_report=second_overlooker_report,
+            conflict=conflict,
+            conflict_resolution=resolution,
             workspace_diff=workspace_diff,
         )
 
@@ -405,6 +474,23 @@ class GraphRuntime:
         record.overlooker_failure_type = result.overlooker_report.failure_type
         record.overlooker_confidence = result.overlooker_report.confidence
         record.release_overlooker = result.overlooker_report.release_overlooker
+        record.high_risk = result.conflict.details.get("high_risk", False) if result.conflict else False
+        record.second_overlooker_report_ref = (
+            result.second_overlooker_report.report_ref.uri
+            if result.second_overlooker_report and result.second_overlooker_report.report_ref
+            else None
+        )
+        if result.conflict and result.conflict_resolution:
+            conflict_event = {
+                "conflict": to_plain_dict(result.conflict),
+                "resolution": to_plain_dict(result.conflict_resolution),
+            }
+            record.conflict_history.append(conflict_event)
+            record.conflict_resolution = to_plain_dict(result.conflict_resolution)
+            if result.conflict_resolution.required_action == "request_permission_review":
+                record.overlooker_recommended_action = "request_permission_review"
+            elif result.conflict_resolution.required_action == "require_human_review":
+                record.overlooker_recommended_action = "require_human_review"
         if result.final_state == NodeState.NODE_ACCEPTED.value:
             record.status = "NODE_ACCEPTED"
             record.failure_code = None
@@ -429,6 +515,8 @@ class GraphRuntime:
                 "overlooker_recommended_action": record.overlooker_recommended_action,
                 "overlooker_failure_type": record.overlooker_failure_type,
                 "release_overlooker": record.release_overlooker,
+                "second_overlooker_report_ref": record.second_overlooker_report_ref,
+                "conflict_resolution": record.conflict_resolution,
             },
         )
 
@@ -474,7 +562,12 @@ class GraphRuntime:
             return event
         if record.attempts < spec.max_attempts and spec.retry_budget > 0:
             patch = self._propose_retry_patch(run_id, spec, record, records)
-            compiled = self.compiler.validate_patch(patch, set(records), spec.graph_id)
+            compiled = self.compiler.validate_patch(
+                patch,
+                set(records),
+                spec.graph_id,
+                spec.phase,
+            )
             patch_ref = self.artifacts.put_json(
                 to_plain_dict(patch),
                 {"kind": "stage_d_graph_patch", "graph_id": spec.graph_id, "node_id": record.node_id},
@@ -832,6 +925,112 @@ Rules:
             recommended_action=str(report["recommended_action"]),
             release_overlooker=bool(report["release_overlooker"]),
         )
+
+    def _phase_e_enabled(self, phase: str, overlooker_mode: str) -> bool:
+        return phase.upper() == "E" or overlooker_mode in {"phase_e", "codex_phase_e"}
+
+    def _is_high_risk(self, node: NodeCapsule) -> bool:
+        profile = node.sandbox_profile or {}
+        if bool(profile.get("high_risk")):
+            return True
+        risk = str(profile.get("risk_level") or "").lower()
+        if risk in {"high", "critical"}:
+            return True
+        if node.phase.lower() in {"release", "deployment", "permission", "security"}:
+            return True
+        return bool(self._write_paths(node)) and bool(profile.get("requires_second_overlooker"))
+
+    def _second_overlooker_review(
+        self,
+        run_id: str,
+        node: NodeCapsule,
+        evidence: EvidenceBundle,
+        validator_reports: list[ValidatorReport],
+        worker_result: WorkerResult,
+        workspace_diff: dict[str, list[str]],
+        fork_plan: WorkspaceForkPlan,
+        second_overlooker_mode: str,
+    ) -> OverlookerReport:
+        if second_overlooker_mode == "codex":
+            return self.overlooker.review(
+                node,
+                evidence,
+                validator_reports,
+                worker_result,
+                workspace_diff,
+                self.root
+                / "runs"
+                / run_id
+                / "nodes"
+                / node.node_id
+                / f"attempt-{fork_plan.attempt}"
+                / "second-overlooker",
+            )
+        return self._deterministic_review(
+            node,
+            evidence,
+            validator_reports,
+            worker_result,
+        )
+
+    def _build_conflict(
+        self,
+        run_id: str,
+        node: NodeCapsule,
+        validator_reports: list[ValidatorReport],
+        overlooker_reports: list[OverlookerReport],
+        high_risk: bool,
+    ) -> DecisionConflict:
+        policy_findings = self._policy_findings(node)
+        conflict_type = "high_risk_second_overlooker" if high_risk else "phase_e_gate"
+        if policy_findings:
+            conflict_type = "policy_conflict"
+        elif any(not report.passed for report in validator_reports):
+            conflict_type = "validator_conflict"
+        elif len({report.verdict for report in overlooker_reports}) > 1:
+            conflict_type = "overlooker_disagreement"
+        return DecisionConflict(
+            conflict_id=f"conflict-{uuid.uuid4().hex[:12]}",
+            run_id=run_id,
+            node_id=node.node_id,
+            conflict_type=conflict_type,
+            policy_findings=policy_findings,
+            validator_reports=validator_reports,
+            overlooker_reports=overlooker_reports,
+            director_intent="advance",
+            risk_level="high" if high_risk else "normal",
+            details={
+                "high_risk": high_risk,
+                "policy_source": "sandbox_profile",
+            },
+        )
+
+    def _policy_findings(self, node: NodeCapsule) -> list[dict[str, Any]]:
+        profile = node.sandbox_profile or {}
+        findings: list[dict[str, Any]] = []
+        if profile.get("network") not in {None, "none"}:
+            findings.append(
+                {
+                    "severity": "error",
+                    "code": "network_requires_permission_review",
+                    "message": "Phase E blocks non-none network until permission review.",
+                    "node_id": node.node_id,
+                }
+            )
+        sensitive_paths = profile.get("sensitive_paths") or [".env", ".git", "secrets"]
+        write_paths = profile.get("allowed_write_paths") or []
+        for path in write_paths:
+            text = str(path).strip("/")
+            if any(text == str(s).strip("/") or text.startswith(f"{str(s).strip('/')}/") for s in sensitive_paths):
+                findings.append(
+                    {
+                        "severity": "error",
+                        "code": "sensitive_write_requires_permission_review",
+                        "message": f"Write path requires permission review: {path}",
+                        "node_id": node.node_id,
+                    }
+                )
+        return findings
 
     def _initial_records(self, spec: GraphRunSpec) -> dict[str, GraphNodeRecord]:
         dependencies: dict[str, list[str]] = {node.node_id: [] for node in spec.nodes}
@@ -1228,6 +1427,8 @@ Rules:
             "overlooker_mode": spec.overlooker_mode,
             "director_mode": spec.director_mode,
             "replan_budget": spec.replan_budget,
+            "phase": spec.phase,
+            "second_overlooker_mode": spec.second_overlooker_mode,
         }
 
     def _spec_from_checkpoint(self, checkpoint: dict[str, Any]) -> GraphRunSpec:
@@ -1243,6 +1444,8 @@ Rules:
             overlooker_mode=str(raw["overlooker_mode"]),
             director_mode=str(raw.get("director_mode", "deterministic")),
             replan_budget=int(raw.get("replan_budget", 0)),
+            phase=str(raw.get("phase", "D")),
+            second_overlooker_mode=str(raw.get("second_overlooker_mode", "deterministic")),
         )
 
     def _node_from_plain(self, raw: dict[str, Any]) -> NodeCapsule:

@@ -115,6 +115,20 @@ python3 examples/phase_d_codex_retry_fork_demo.py
 
 This launches `codex exec --json` for the retrying worker node, the Codex Overlooker, the Codex Director GraphPatch step, and the retry fork Overlooker. Attempt 1 poisons its workspace and fails; the Overlooker rejects the node, the Director emits a compiler-validated `retry_node` `GraphPatch`, and attempt 2 is forked from the accepted baseline workspace. It succeeds only if the poison file is absent.
 
+Run the Phase E conflict arbitration demo:
+
+```bash
+python3 examples/phase_e_conflict_runtime_demo.py
+```
+
+Run the Phase E GraphPatch compiler checks:
+
+```bash
+python3 examples/phase_e_graph_patch_compiler_demo.py
+```
+
+Phase E adds high-risk node handling, a second Overlooker gate, `DecisionConflict` / `ConflictResolution`, human-review and permission-review placeholders, and Phase E compiler validation for advanced GraphPatch operations.
+
 Phase B adds:
 
 - `DirectorAgentV1`: staged central planner named Director Agent.
@@ -136,9 +150,17 @@ Phase D adds:
 - Director runtime GraphPatch application before retry scheduling.
 - Overlooker-guided retry fork points so failed attempts do not poison the next attempt workspace.
 
-Deferred beyond Phase D:
+Phase E adds:
 
-- Conflict arbitration, second Overlooker, human-review placeholders, and permission escalation belong to Phase E.
+- `DecisionConflict` and `ConflictResolution` schemas.
+- `ConflictResolver` with policy / deterministic validator > Overlooker consensus > Director preference priority.
+- High-risk node detection from phase and sandbox profile.
+- Second Overlooker review before releasing high-risk nodes.
+- Human-review and permission-escalation placeholders.
+- Phase E GraphPatch compiler validation for `insert_node`, `split_node`, `replace_worker`, `add_edge`, `remove_edge`, and `update_join_policy`.
+
+Deferred beyond Phase E:
+
 - TPGO, textual gradients, optimization memory, targeted validation, and rollback retention belong to Phase F.
 - Secret handling, redaction, artifact secret scanning, and per-run isolation boundaries belong to Phase G.
 

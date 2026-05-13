@@ -132,6 +132,34 @@ class CompiledGraphPatch:
     findings: list[dict[str, Any]]
 
 
+@dataclass
+class DecisionConflict:
+    conflict_id: str
+    run_id: str
+    node_id: str
+    conflict_type: str
+    policy_findings: list[dict[str, Any]]
+    validator_reports: list[ValidatorReport]
+    overlooker_reports: list[OverlookerReport]
+    director_intent: str
+    risk_level: str = "normal"
+    details: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ConflictResolution:
+    conflict_id: str
+    node_id: str
+    decision: str
+    rationale: str
+    priority: str
+    required_action: str
+    accepted_overlooker_id: str | None = None
+    release_node: bool = False
+    human_review_required: bool = False
+    permission_escalation_required: bool = False
+
+
 def to_plain_dict(value: Any) -> Any:
     if isinstance(value, Enum):
         return value.value

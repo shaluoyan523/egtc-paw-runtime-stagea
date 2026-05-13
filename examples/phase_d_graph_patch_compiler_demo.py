@@ -76,14 +76,14 @@ def main() -> int:
     )
     report = {
         "accepted_retry_node": accepted.accepted,
-        "deferred_insert_node": [finding["code"] for finding in deferred.findings],
+        "disallowed_insert_node": [finding["code"] for finding in deferred.findings],
         "permission_change": [finding["code"] for finding in permission_change.findings],
         "wrong_graph": [finding["code"] for finding in wrong_graph.findings],
     }
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if (
         report["accepted_retry_node"]
-        and "graph_patch_op_deferred" in report["deferred_insert_node"]
+        and "unknown_graph_patch_op" in report["disallowed_insert_node"]
         and "patch_attempts_permission_change" in report["permission_change"]
         and "graph_id_mismatch" in report["wrong_graph"]
     ) else 1

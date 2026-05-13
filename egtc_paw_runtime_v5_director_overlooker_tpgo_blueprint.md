@@ -22,7 +22,7 @@
 
 ## 1. v5 相比 v4 的新增重点
 
-当前 Stage A-D 已经补齐了单节点信任链、ArtifactStore、PermissionGrounding、Sandbox backend、Codex exec wrapper、EvidenceBundle、Overlooker gate、并发 Runtime、checkpoint/retry、Overlooker-guided retry fork，以及 Stage D 内可执行的 `retry_node` GraphPatch 闭环。冲突仲裁、多 Overlooker、完整 Artifact lineage、Secret 隔离和 TPGO 自改进层仍属于后续 Stage。v5 在这个安全执行底座上新增一个 **自改进优化层**：
+当前 Stage A-E 已经补齐了单节点信任链、ArtifactStore、PermissionGrounding、Sandbox backend、Codex exec wrapper、EvidenceBundle、Overlooker gate、并发 Runtime、checkpoint/retry、Overlooker-guided retry fork、Stage D 内可执行的 `retry_node` GraphPatch 闭环，以及 Phase E 的高风险节点冲突仲裁、second Overlooker gate、permission / human review placeholder。完整 Artifact lineage、Secret 隔离和 TPGO 自改进层仍属于后续 Stage。v5 在这个安全执行底座上新增一个 **自改进优化层**：
 
 | 新增技术 | 作用 | 在本系统中的落点 |
 |---|---|---|
@@ -1738,7 +1738,8 @@ turn.completed 不会直接变成 NODE_ACCEPTED。
 边界：
 
 - Phase D 只执行 `retry_node` 这类有明确 runtime 行为的补丁；
-- `insert_node`、`split_node`、`replace_worker`、`add_edge`、`remove_edge`、`update_schedule` 需要更完整的冲突仲裁和策略验证，进入 Phase E；
+- `insert_node`、`split_node`、`replace_worker`、`add_edge`、`remove_edge`、`update_join_policy` 的 compiler 校验入口进入 Phase E；
+- `update_schedule` 暂不启用，留到更完整的调度策略阶段；
 - TPGEdit、TextualGradient、OptimizationMemory、targeted validation、rollback retention 进入 Phase F；
 - Secret、redaction、artifact secret scanning、per-run isolation boundary 进入 Phase G。
 
@@ -1754,8 +1755,9 @@ turn.completed 不会直接变成 NODE_ACCEPTED。
 - human review placeholder；
 - permission escalation path；
 - high-risk node policy。
-- advanced GraphPatch ops: insert_node、split_node、replace_worker、add_edge、remove_edge、update_join_policy、update_schedule；
-- bounded replan budget；
+- advanced GraphPatch compiler checks: insert_node、split_node、replace_worker、add_edge、remove_edge、update_join_policy；
+- update_schedule deferred；
+- bounded replan / retry budget；
 - policy / validator > Overlooker > Director conflict priority。
 
 ### Phase F：经验检索 + TPGO 自改进层

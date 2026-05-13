@@ -50,15 +50,16 @@ class PermissionGrounder:
 
 class WorkflowCompiler:
     STAGE_D_GRAPH_PATCH_OPS = {"retry_node"}
-    DEFERRED_GRAPH_PATCH_OPS = {
+    PHASE_E_GRAPH_PATCH_OPS = {
+        "retry_node",
         "replace_worker",
         "split_node",
         "insert_node",
         "add_edge",
         "remove_edge",
         "update_join_policy",
-        "update_schedule",
     }
+    DEFERRED_GRAPH_PATCH_OPS = {"update_schedule"}
     FORBIDDEN_PATCH_VALUE_KEYS = {
         "allowed_write_paths",
         "capability_tokens",
@@ -161,6 +162,7 @@ class WorkflowCompiler:
         patch: GraphPatch,
         known_node_ids: set[str],
         graph_id: str | None = None,
+        phase: str = "D",
     ) -> CompiledGraphPatch:
         findings: list[dict[str, object]] = []
         if not patch.patch_id:
@@ -206,7 +208,7 @@ class WorkflowCompiler:
                 )
             )
         for operation in patch.operations:
-            findings.extend(self._check_patch_operation(operation, patch, known_node_ids))
+            findings.extend(self._check_patch_operation(operation, patch, known_node_ids, phase))
         return CompiledGraphPatch(
             accepted=not any(finding["severity"] == "error" for finding in findings),
             patch_id=patch.patch_id,
@@ -220,8 +222,10 @@ class WorkflowCompiler:
         operation: GraphPatchOperation,
         patch: GraphPatch,
         known_node_ids: set[str],
+        phase: str,
     ) -> list[dict[str, object]]:
         findings: list[dict[str, object]] = []
+        allowed_ops = self.STAGE_D_GRAPH_PATCH_OPS if phase == "D" else self.PHASE_E_GRAPH_PATCH_OPS
         if operation.op in self.DEFERRED_GRAPH_PATCH_OPS:
             findings.append(
                 self._patch_finding(
@@ -232,7 +236,7 @@ class WorkflowCompiler:
                 )
             )
             return findings
-        if operation.op not in self.STAGE_D_GRAPH_PATCH_OPS:
+        if operation.op not in allowed_ops:
             findings.append(
                 self._patch_finding(
                     "error",
@@ -254,22 +258,12 @@ class WorkflowCompiler:
                         target_node_id,
                     )
                 )
-            if target_node_id != patch.triggering_node_id:
+            if phase == "D" and target_node_id != patch.triggering_node_id:
                 findings.append(
                     self._patch_finding(
                         "error",
                         "retry_must_target_triggering_node",
                         "Stage D retry_node patches may only retry the node that triggered the patch.",
-                        target_node_id,
-                    )
-                )
-            forbidden = sorted(self.FORBIDDEN_PATCH_VALUE_KEYS.intersection(operation.value))
-            if forbidden:
-                findings.append(
-                    self._patch_finding(
-                        "error",
-                        "patch_attempts_permission_change",
-                        f"Stage D GraphPatch cannot change permissions or sandbox policy: {forbidden}",
                         target_node_id,
                     )
                 )
@@ -282,6 +276,117 @@ class WorkflowCompiler:
                         target_node_id,
                     )
                 )
+        elif operation.op == "insert_node":
+            new_node = operation.value.get("node")
+            if not isinstance(new_node, dict):
+                findings.append(
+                    self._patch_finding(
+                        "error",
+                        "insert_node_missing_node_payload",
+                        "insert_node requires value.node payload.",
+                        target_node_id,
+                    )
+                )
+            else:
+                new_node_id = str(new_node.get("node_id") or "")
+                if not new_node_id:
+                    findings.append(
+                        self._patch_finding(
+                            "error",
+                            "insert_node_missing_node_id",
+                            "insert_node value.node must include node_id.",
+                            target_node_id,
+                        )
+                    )
+                if new_node_id in known_node_ids:
+                    findings.append(
+                        self._patch_finding(
+                            "error",
+                            "insert_node_duplicate_node_id",
+                            f"insert_node target already exists: {new_node_id}",
+                            new_node_id,
+                        )
+                    )
+                if not new_node.get("acceptance_criteria"):
+                    findings.append(
+                        self._patch_finding(
+                            "error",
+                            "insert_node_missing_acceptance_criteria",
+                            "Inserted node must define Overlooker acceptance criteria.",
+                            new_node_id or target_node_id,
+                        )
+                    )
+                if not new_node.get("required_evidence"):
+                    findings.append(
+                        self._patch_finding(
+                            "error",
+                            "insert_node_missing_required_evidence",
+                            "Inserted node must define required_evidence.",
+                            new_node_id or target_node_id,
+                        )
+                    )
+        elif operation.op in {"add_edge", "remove_edge"}:
+            if operation.source_node_id not in known_node_ids:
+                findings.append(
+                    self._patch_finding(
+                        "error",
+                        "unknown_edge_source",
+                        f"Edge source is not in graph: {operation.source_node_id}",
+                        operation.source_node_id,
+                    )
+                )
+            if operation.target_node_id not in known_node_ids:
+                findings.append(
+                    self._patch_finding(
+                        "error",
+                        "unknown_edge_target",
+                        f"Edge target is not in graph: {operation.target_node_id}",
+                        operation.target_node_id,
+                    )
+                )
+        elif operation.op in {"replace_worker", "split_node", "update_join_policy"}:
+            if target_node_id not in known_node_ids:
+                findings.append(
+                    self._patch_finding(
+                        "error",
+                        "unknown_graph_patch_node",
+                        f"GraphPatch node is not in graph: {target_node_id}",
+                        target_node_id,
+                    )
+                )
+            if operation.op == "replace_worker" and "executor_kind" not in operation.value and "prompt" not in operation.value:
+                findings.append(
+                    self._patch_finding(
+                        "error",
+                        "replace_worker_missing_change",
+                        "replace_worker requires a prompt or executor_kind change.",
+                        target_node_id,
+                    )
+                )
+            if operation.op == "split_node" and "nodes" not in operation.value:
+                findings.append(
+                    self._patch_finding(
+                        "error",
+                        "split_node_missing_nodes",
+                        "split_node requires value.nodes.",
+                        target_node_id,
+                    )
+                )
+        forbidden = sorted(self.FORBIDDEN_PATCH_VALUE_KEYS.intersection(operation.value))
+        if forbidden:
+            code = (
+                "patch_requires_permission_review"
+                if phase != "D"
+                else "patch_attempts_permission_change"
+            )
+            findings.append(
+                self._patch_finding(
+                    "error",
+                    code,
+                    f"GraphPatch cannot change permissions or sandbox policy without permission review: {forbidden}",
+                    target_node_id,
+                )
+            )
         return findings
 
     def _patch_finding(
