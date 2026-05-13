@@ -14,6 +14,7 @@ from .codex_wrapper import CodexExecWrapper
 from .compiler import WorkflowCompiler
 from .conflict import ConflictResolver
 from .event_log import EventLog
+from .experience import ExperienceLibrary, ExperienceObservation
 from .evidence import EvidenceCollector
 from .identity import IdentityService
 from .models import (
@@ -93,6 +94,9 @@ class GraphNodeRecord:
     fork_history: list[dict[str, Any]] = field(default_factory=list)
     fork_advisor_history: list[dict[str, Any]] = field(default_factory=list)
     graph_patch_history: list[dict[str, Any]] = field(default_factory=list)
+    experience_pattern_ids: list[str] = field(default_factory=list)
+    experience_observations: list[dict[str, Any]] = field(default_factory=list)
+    experience_update_proposals: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -109,6 +113,7 @@ class NodeExecutionResult:
     conflict: DecisionConflict | None
     conflict_resolution: ConflictResolution | None
     workspace_diff: dict[str, list[str]]
+    experience_pattern_ids: list[str]
 
 
 @dataclass(frozen=True)
@@ -148,6 +153,8 @@ class GraphRuntime:
         )
         self.compiler = WorkflowCompiler()
         self.conflict_resolver = ConflictResolver()
+        self.experience_library = ExperienceLibrary(self.root / "experience")
+        self.experience_library.seed_defaults()
         self.collector = EvidenceCollector(
             self.artifacts, self.runtime_actor, self.runtime_token
         )
@@ -304,7 +311,7 @@ class GraphRuntime:
                             {"failure_code": failure_code, "message": str(exc)},
                         )
                     if result is not None:
-                        self._apply_node_result(run_id, record, result)
+                        self._apply_node_result(run_id, spec.graph_id, record, result)
                     if record.status == "NODE_REJECTED":
                         retry_event = self._maybe_retry(run_id, spec, record, records)
                         if retry_event:
@@ -447,11 +454,13 @@ class GraphRuntime:
             conflict=conflict,
             conflict_resolution=resolution,
             workspace_diff=workspace_diff,
+            experience_pattern_ids=list(node.experience_pattern_ids),
         )
 
     def _apply_node_result(
         self,
         run_id: str,
+        graph_id: str,
         record: GraphNodeRecord,
         result: NodeExecutionResult,
     ) -> None:
@@ -519,6 +528,7 @@ class GraphRuntime:
                 "conflict_resolution": record.conflict_resolution,
             },
         )
+        self._record_experience_observation(run_id, graph_id, record, result)
 
     def _maybe_retry(
         self,
@@ -1045,9 +1055,73 @@ Rules:
                 dependents=sorted(dependents[node.node_id]),
                 read_only=self._is_read_only(node),
                 write_paths=self._write_paths(node),
+                experience_pattern_ids=list(node.experience_pattern_ids),
             )
             for node in spec.nodes
         }
+
+    def _record_experience_observation(
+        self,
+        run_id: str,
+        graph_id: str,
+        record: GraphNodeRecord,
+        result: NodeExecutionResult,
+    ) -> None:
+        pattern_ids = list(result.experience_pattern_ids or record.experience_pattern_ids)
+        if not pattern_ids:
+            return
+        if record.status == "NODE_ACCEPTED":
+            outcome = "accepted"
+            recommended_update = "promote"
+        elif record.status == "NODE_ABORTED":
+            outcome = "aborted"
+            recommended_update = "demote"
+        else:
+            outcome = "rejected"
+            recommended_update = "demote"
+        evidence_refs = [result.evidence.evidence_ref.uri]
+        if record.overlooker_report_ref:
+            evidence_refs.append(record.overlooker_report_ref)
+        observation = ExperienceObservation(
+            observation_id=f"exp-observation-{uuid.uuid4().hex[:12]}",
+            run_id=run_id,
+            graph_id=graph_id,
+            node_id=result.node_id,
+            pattern_ids_used=pattern_ids,
+            outcome=outcome,
+            validator_findings=[
+                {
+                    "validator_id": report.validator_id,
+                    "passed": report.passed,
+                    "findings": report.findings,
+                    "evidence_ref": report.evidence_ref,
+                }
+                for report in result.validator_reports
+            ],
+            overlooker_verdict=result.overlooker_report.verdict,
+            failure_type=result.overlooker_report.failure_type or record.failure_code,
+            recommended_update=recommended_update,
+            evidence_refs=evidence_refs,
+        )
+        self.experience_library.record_observation(observation)
+        proposals = self.experience_library.update_from_observation(
+            observation,
+            proposed_by="runtime",
+        )
+        observation_event = {
+            "observation": to_plain_dict(observation),
+            "update_proposals": [to_plain_dict(proposal) for proposal in proposals],
+        }
+        record.experience_observations.append(to_plain_dict(observation))
+        record.experience_update_proposals.extend(
+            to_plain_dict(proposal) for proposal in proposals
+        )
+        self._record(
+            run_id,
+            record.node_id,
+            "ExperienceObservationRecorded",
+            observation_event,
+        )
 
     def _select_fork_plan(
         self,

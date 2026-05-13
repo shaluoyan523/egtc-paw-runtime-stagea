@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath
 
+from .experience import ExperienceLibrary
 from .models import CompiledGraphPatch, GraphPatch, GraphPatchOperation, NodeCapsule
 from .phaseb_models import (
     CompiledWorkflow,
@@ -69,7 +70,11 @@ class WorkflowCompiler:
         "secret_refs",
     }
 
-    def compile(self, blueprint: WorkflowBlueprint) -> CompiledWorkflow:
+    def compile(
+        self,
+        blueprint: WorkflowBlueprint,
+        experience_library: ExperienceLibrary | None = None,
+    ) -> CompiledWorkflow:
         findings: list[CompilerFinding] = []
         node_ids = [inst.node.node_id for inst in blueprint.node_instantiations]
         if len(node_ids) != len(set(node_ids)):
@@ -92,6 +97,8 @@ class WorkflowCompiler:
 
         for inst in blueprint.node_instantiations:
             findings.extend(self._check_node(blueprint.repo_policy, inst.node, inst.permission_grounding))
+
+        findings.extend(self._check_experience_usage(blueprint, experience_library))
 
         accepted = not any(finding.severity == "error" for finding in findings)
         return CompiledWorkflow(
@@ -156,6 +163,84 @@ class WorkflowCompiler:
                 )
             )
         return findings
+
+    def _check_experience_usage(
+        self,
+        blueprint: WorkflowBlueprint,
+        experience_library: ExperienceLibrary | None,
+    ) -> list[CompilerFinding]:
+        findings: list[CompilerFinding] = []
+        blueprint_pattern_ids = set(blueprint.experience_pattern_ids)
+        skeleton_pattern_ids = set(blueprint.workflow_skeleton.experience_pattern_ids)
+        if not skeleton_pattern_ids.issubset(blueprint_pattern_ids):
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "experience_skeleton_not_declared",
+                    "WorkflowSkeleton references experience patterns not declared by the blueprint.",
+                )
+            )
+        node_pattern_ids: set[str] = set()
+        for inst in blueprint.node_instantiations:
+            node_pattern_ids.update(inst.node.experience_pattern_ids)
+            missing = sorted(set(inst.node.experience_pattern_ids) - blueprint_pattern_ids)
+            if missing:
+                findings.append(
+                    CompilerFinding(
+                        "error",
+                        "experience_node_not_declared",
+                        f"Node references experience patterns not declared by the blueprint: {missing}",
+                        inst.node.node_id,
+                    )
+                )
+        if not blueprint_pattern_ids and not node_pattern_ids:
+            return findings
+        if experience_library is None:
+            findings.append(
+                CompilerFinding(
+                    "warning",
+                    "experience_library_not_provided",
+                    "Experience pattern references were not checked against an active library.",
+                )
+            )
+            return findings
+        active = {pattern.pattern_id: pattern for pattern in experience_library.load_patterns()}
+        for pattern_id in sorted(blueprint_pattern_ids | node_pattern_ids):
+            pattern = active.get(pattern_id)
+            if pattern is None:
+                findings.append(
+                    CompilerFinding(
+                        "error",
+                        "unknown_experience_pattern",
+                        f"Experience pattern is not active in the library: {pattern_id}",
+                    )
+                )
+                continue
+            forbidden = self._forbidden_experience_keys(pattern.recommended_structure)
+            if forbidden:
+                findings.append(
+                    CompilerFinding(
+                        "error",
+                        "experience_attempts_permission_change",
+                        (
+                            "Experience patterns may shape workflow structure but cannot "
+                            f"request permissions or sandbox changes: {forbidden}"
+                        ),
+                    )
+                )
+        return findings
+
+    def _forbidden_experience_keys(self, value: object) -> list[str]:
+        found: set[str] = set()
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                if key in self.FORBIDDEN_PATCH_VALUE_KEYS:
+                    found.add(key)
+                found.update(self._forbidden_experience_keys(nested))
+        elif isinstance(value, list):
+            for item in value:
+                found.update(self._forbidden_experience_keys(item))
+        return sorted(found)
 
     def validate_patch(
         self,

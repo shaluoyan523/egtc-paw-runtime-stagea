@@ -45,6 +45,7 @@ class NodeCapsule:
     command: list[str]
     acceptance_criteria: list[str]
     required_evidence: list[str] = field(default_factory=lambda: ["diff", "test", "log"])
+    experience_pattern_ids: list[str] = field(default_factory=list)
     workspace: str | None = None
     executor_kind: str = "subprocess"
     prompt: str | None = None

@@ -28,6 +28,7 @@ class TaskDiagnosis:
     requires_code_change: bool
     requires_tests: bool
     unknowns: list[str] = field(default_factory=list)
+    experience_matches: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -38,6 +39,7 @@ class WorkflowSkeletonNode:
     goal: str
     depends_on: list[str] = field(default_factory=list)
     expected_outputs: list[str] = field(default_factory=list)
+    experience_pattern_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -47,6 +49,8 @@ class WorkflowSkeleton:
     nodes: list[WorkflowSkeletonNode]
     edges: list[tuple[str, str]]
     rationale: str
+    experience_pattern_ids: list[str] = field(default_factory=list)
+    experience_rationale: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -85,6 +89,7 @@ class WorkflowBlueprint:
     repo_policy: RepoPolicy
     workflow_skeleton: WorkflowSkeleton
     node_instantiations: list[NodeInstantiation]
+    experience_pattern_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
