@@ -4,6 +4,7 @@ import shutil
 import time
 import uuid
 import json
+import copy
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
@@ -198,7 +199,6 @@ class GraphRuntime:
         records: dict[str, GraphNodeRecord],
         stop_after_accepted: int | None,
     ) -> dict[str, Any]:
-        nodes = {node.node_id: node for node in spec.nodes}
         active: dict[Future[NodeExecutionResult], str] = {}
         active_writer: str | None = None
         max_observed_parallelism = 0
@@ -241,6 +241,7 @@ class GraphRuntime:
                         break
                     record.status = "WORKER_RUNNING"
                     record.attempts += 1
+                    nodes = {node.node_id: node for node in spec.nodes}
                     fork_plan = self._select_fork_plan(
                         run_id,
                         nodes[candidate],
@@ -386,6 +387,7 @@ class GraphRuntime:
                 evidence,
                 validator_reports,
                 worker_result,
+                workspace,
             )
         second_overlooker_report: OverlookerReport | None = None
         conflict: DecisionConflict | None = None
@@ -570,7 +572,9 @@ class GraphRuntime:
             }
             self._record(run_id, record.node_id, "NodeRetryNotScheduled", event)
             return event
-        if record.attempts < spec.max_attempts and spec.retry_budget > 0:
+        has_retry_budget = recommended_action in retry_actions and spec.retry_budget > 0
+        has_replan_budget = recommended_action in replan_actions and spec.replan_budget > 0
+        if record.attempts < spec.max_attempts and (has_retry_budget or has_replan_budget):
             patch = self._propose_retry_patch(run_id, spec, record, records)
             compiled = self.compiler.validate_patch(
                 patch,
@@ -580,14 +584,18 @@ class GraphRuntime:
             )
             patch_ref = self.artifacts.put_json(
                 to_plain_dict(patch),
-                {"kind": "stage_d_graph_patch", "graph_id": spec.graph_id, "node_id": record.node_id},
+                {
+                    "kind": f"phase_{spec.phase.lower()}_graph_patch",
+                    "graph_id": spec.graph_id,
+                    "node_id": record.node_id,
+                },
                 self.director_actor,
                 self.director_token,
             )
             compiled_ref = self.artifacts.put_json(
                 to_plain_dict(compiled),
                 {
-                    "kind": "stage_d_compiled_graph_patch",
+                    "kind": f"phase_{spec.phase.lower()}_compiled_graph_patch",
                     "graph_id": spec.graph_id,
                     "node_id": record.node_id,
                     "patch_id": patch.patch_id,
@@ -615,7 +623,7 @@ class GraphRuntime:
                 self._record(run_id, record.node_id, "GraphPatchRejected", event)
                 return event
 
-            applied = self._apply_graph_patch(run_id, spec, compiled, record)
+            applied = self._apply_graph_patch(run_id, spec, compiled, record, records)
             if not applied:
                 event = {
                     "node_id": record.node_id,
@@ -625,9 +633,10 @@ class GraphRuntime:
                 }
                 self._record(run_id, record.node_id, "GraphPatchNoop", event)
                 return event
-            spec.retry_budget -= 1
             if recommended_action in replan_actions:
                 spec.replan_budget = max(0, spec.replan_budget - patch.replan_budget_cost)
+            else:
+                spec.retry_budget = max(0, spec.retry_budget - 1)
             event = {
                 "node_id": record.node_id,
                 "failure_code": failure_code,
@@ -650,6 +659,70 @@ class GraphRuntime:
         records: dict[str, GraphNodeRecord],
     ) -> GraphPatch:
         if spec.director_mode != "codex":
+            if (
+                spec.phase.upper() != "D"
+                and record.overlooker_recommended_action == "request_director_replan"
+            ):
+                inserted_node_id = f"{record.node_id}-phase-e-diagnostic"
+                return GraphPatch(
+                    patch_id=f"graph-patch-{uuid.uuid4().hex[:12]}",
+                    director_id=self.director_actor.actor_id,
+                    graph_id=spec.graph_id,
+                    triggering_node_id=record.node_id,
+                    triggering_event="overlooker_rejected_node",
+                    overlooker_report_ref=record.overlooker_report_ref,
+                    operations=[
+                        GraphPatchOperation(
+                            op="insert_node",
+                            node_id=inserted_node_id,
+                            value={
+                                "node": {
+                                    "node_id": inserted_node_id,
+                                    "phase": "diagnosis",
+                                    "goal": "Perform targeted read-only diagnosis before retrying the rejected node.",
+                                    "command": [
+                                        "python3",
+                                        "-c",
+                                        (
+                                            "from pathlib import Path; import json; "
+                                            "Path('phase_e_diagnostic.txt').write_text('diagnostic completed\\n'); "
+                                            "Path('phasea_test_result.json').write_text(json.dumps({'passed': True, 'name': 'phase_e_diagnostic'})); "
+                                            "print(json.dumps({'type':'test_result','name':'phase_e_diagnostic','passed':True}))"
+                                        ),
+                                    ],
+                                    "acceptance_criteria": [
+                                        "Diagnostic node must produce read-only evidence for the retried node.",
+                                        "Overlooker must cite diagnostic evidence_ref.",
+                                    ],
+                                    "required_evidence": [
+                                        "test",
+                                        "log",
+                                        "sandbox_events",
+                                        "resource_report",
+                                    ],
+                                }
+                            },
+                            rationale="Insert targeted diagnostic node before retrying after Director replan request.",
+                        ),
+                        GraphPatchOperation(
+                            op="add_edge",
+                            source_node_id=inserted_node_id,
+                            target_node_id=record.node_id,
+                            rationale="Retried node consumes diagnostic evidence before rerun.",
+                        ),
+                        GraphPatchOperation(
+                            op="retry_node",
+                            node_id=record.node_id,
+                            value={
+                                "failure_code": record.failure_code,
+                                "recommended_action": record.overlooker_recommended_action,
+                            },
+                            rationale="Retry rejected node after Phase E diagnostic insertion.",
+                        ),
+                    ],
+                    rationale="Deterministic Director selected Phase E replan with diagnostic insertion.",
+                    replan_budget_cost=1,
+                )
             return GraphPatch(
                 patch_id=f"graph-patch-{uuid.uuid4().hex[:12]}",
                 director_id=self.director_actor.actor_id,
@@ -692,17 +765,35 @@ class GraphRuntime:
                     "attempts": node_record.attempts,
                     "accepted_workspace": node_record.accepted_workspace,
                     "failure_code": node_record.failure_code,
+                    "overlooker_recommended_action": node_record.overlooker_recommended_action,
+                    "overlooker_report_ref": node_record.overlooker_report_ref,
+                    "conflict_resolution": node_record.conflict_resolution,
                 }
                 for node_id, node_record in records.items()
             },
             "policy": {
-                "stage": "Phase D",
-                "allowed_operations": ["retry_node"],
+                "stage": f"Phase {spec.phase.upper()}",
+                "allowed_operations": (
+                    ["retry_node"]
+                    if spec.phase.upper() == "D"
+                    else [
+                        "retry_node",
+                        "replace_worker",
+                        "split_node",
+                        "insert_node",
+                        "add_edge",
+                        "remove_edge",
+                        "update_join_policy",
+                    ]
+                ),
                 "forbidden": [
                     "Do not change permissions or sandbox_profile.",
-                    "Do not add or remove graph edges in Phase D.",
                     "Do not skip the Overlooker gate.",
-                    "Retry only the triggering node.",
+                    (
+                        "Retry only the triggering node."
+                        if spec.phase.upper() == "D"
+                        else "Only change graph topology through compiler-valid Phase E operations."
+                    ),
                 ],
             },
         }
@@ -712,17 +803,17 @@ class GraphRuntime:
         )
         director_node = NodeCapsule(
             node_id=f"{record.node_id}-director-graph-patch",
-            phase="Phase D Director",
-            goal="Create a compiler-valid Stage D GraphPatch for the rejected node.",
+            phase=f"Phase {spec.phase.upper()} Director",
+            goal=f"Create a compiler-valid Phase {spec.phase.upper()} GraphPatch for the rejected node.",
             command=[],
             acceptance_criteria=[
                 "Director must write strict JSON to graph_patch.json.",
-                "Director may only use retry_node in Phase D.",
-                "Director must not change permissions, sandbox policy, or edges.",
+                "Director may only use operations allowed by director_runtime_state.json.",
+                "Director must not change permissions, sandbox policy, or Overlooker gates.",
             ],
             required_evidence=["log", "sandbox_events", "resource_report"],
             executor_kind="codex_cli",
-            prompt=self._director_patch_prompt(),
+            prompt=self._director_patch_prompt(spec.phase),
             sandbox_profile={
                 "backend": "codex_native",
                 "sandbox_mode": "workspace_write",
@@ -730,7 +821,7 @@ class GraphRuntime:
                 "allowed_read_paths": ["."],
                 "allowed_write_paths": ["."],
                 "resource_limits": {
-                    "wall_time_sec": 120,
+                    "wall_time_sec": 240,
                     "memory_mb": 1024,
                     "disk_mb": 512,
                     "max_processes": 48,
@@ -765,21 +856,10 @@ class GraphRuntime:
         )
         return patch
 
-    def _director_patch_prompt(self) -> str:
-        return """
-You are the EGTC-PAW Phase D Director Agent.
-
-Read ./director_runtime_state.json and create ./graph_patch.json.
-
-Output strict JSON:
-{
-  "patch_id": "graph-patch-...",
-  "director_id": "codex-director",
-  "graph_id": "...",
-  "triggering_node_id": "...",
-  "triggering_event": "overlooker_rejected_node",
-  "overlooker_report_ref": "artifact://..." | null,
-  "operations": [
+    def _director_patch_prompt(self, phase: str = "D") -> str:
+        phase_name = phase.upper()
+        if phase_name == "D":
+            operation_schema = """
     {
       "op": "retry_node",
       "node_id": "...",
@@ -791,19 +871,83 @@ Output strict JSON:
       },
       "rationale": "short reason"
     }
-  ],
-  "rationale": "short reason",
-  "replan_budget_cost": 1
-}
-
-Rules:
+""".strip()
+            rules = """
 - Use exactly one retry_node operation.
 - Retry only the triggering node from director_runtime_state.json.
 - Do not modify permissions, sandbox_profile, network policy, graph edges, or Overlooker gates.
+""".strip()
+        else:
+            operation_schema = """
+    {
+      "op": "retry_node | replace_worker | split_node | insert_node | add_edge | remove_edge | update_join_policy",
+      "node_id": "target node id or inserted node id",
+      "source_node_id": "edge source or null",
+      "target_node_id": "edge target or null",
+      "value": {
+        "prompt": "replacement prompt when using replace_worker",
+        "executor_kind": "replacement executor when using replace_worker",
+        "node": {
+          "node_id": "new-node-id",
+          "phase": "verification",
+          "goal": "why this inserted node exists",
+          "command": [],
+          "acceptance_criteria": ["Overlooker acceptance criterion"],
+          "required_evidence": ["test", "log"]
+        },
+        "nodes": [
+          {
+            "node_id": "split-subtask-id",
+            "phase": "verification",
+            "goal": "why this split node exists",
+            "command": [],
+            "acceptance_criteria": ["Overlooker acceptance criterion"],
+            "required_evidence": ["test", "log"]
+          }
+        ],
+        "join_policy": "all_success"
+      },
+      "rationale": "short reason"
+    }
+""".strip()
+            rules = """
+- Use the smallest compiler-valid operation set that addresses the failure.
+- Prefer retry_node for a transient failure, replace_worker for bad prompt/executor, insert_node for missing verification/research, split_node for overloaded ownership, and edge changes only when dependency order is wrong.
+- Inserted or split nodes must include node_id, phase, goal, acceptance_criteria, and required_evidence.
+- When repairing a rejected triggering node, the patch must create a re-entry path: either include retry_node for the triggering node, replace_worker for the triggering node, or add edges that make the inserted/split node a dependency of the triggering node and then retry the triggering node.
+- Do not modify permissions, sandbox_profile, network policy, or Overlooker gates.
+- Use update_join_policy only as a recorded planning hint; runtime may not reschedule from it yet.
+""".strip()
+        return """
+You are the EGTC-PAW Phase {phase_name} Director Agent.
+
+Read ./director_runtime_state.json and create ./graph_patch.json.
+
+Output strict JSON:
+{{
+  "patch_id": "graph-patch-...",
+  "director_id": "codex-director",
+  "graph_id": "...",
+  "triggering_node_id": "...",
+  "triggering_event": "overlooker_rejected_node",
+  "overlooker_report_ref": "artifact://..." | null,
+  "operations": [
+{operation_schema}
+  ],
+  "rationale": "short reason",
+  "replan_budget_cost": 1
+}}
+
+Rules:
+{rules}
 - Do not clone repositories.
 - Do not use network.
 - Do not write outside this workspace.
-""".strip()
+""".format(
+            phase_name=phase_name,
+            operation_schema=operation_schema,
+            rules=rules,
+        ).strip()
 
     def _read_graph_patch(self, path: Path) -> dict[str, Any]:
         if not path.exists():
@@ -859,7 +1003,7 @@ Rules:
                 else record.overlooker_report_ref
             ),
             operations=operations,
-            rationale=str(data.get("rationale") or "Director proposed a Stage D retry patch."),
+            rationale=str(data.get("rationale") or f"Director proposed a Phase {spec.phase.upper()} graph patch."),
             replan_budget_cost=int(data.get("replan_budget_cost") or 1),
         )
 
@@ -869,8 +1013,13 @@ Rules:
         spec: GraphRunSpec,
         compiled: CompiledGraphPatch,
         record: GraphNodeRecord,
+        records: dict[str, GraphNodeRecord],
     ) -> bool:
         applied = False
+        phase_name = spec.phase.upper()
+        original_nodes = copy.deepcopy(spec.nodes)
+        original_edges = list(spec.edges)
+        original_records = copy.deepcopy(records)
         for operation in compiled.operations:
             target_node_id = operation.node_id or operation.target_node_id
             if operation.op == "retry_node" and target_node_id == record.node_id:
@@ -878,7 +1027,97 @@ Rules:
                 record.current_worker_id = None
                 record.final_state = None
                 applied = True
+            elif phase_name != "D" and operation.op == "replace_worker" and target_node_id:
+                node = self._find_spec_node(spec, target_node_id)
+                if node is None:
+                    continue
+                if isinstance(operation.value.get("prompt"), str):
+                    node.prompt = str(operation.value["prompt"])
+                if isinstance(operation.value.get("executor_kind"), str):
+                    node.executor_kind = str(operation.value["executor_kind"])
+                if isinstance(operation.value.get("command"), list):
+                    node.command = [str(item) for item in operation.value["command"]]
+                if records[target_node_id].status in {"NODE_REJECTED", "NODE_ABORTED"}:
+                    records[target_node_id].status = "NODE_PLANNED"
+                    records[target_node_id].current_worker_id = None
+                    records[target_node_id].final_state = None
+                applied = True
+            elif phase_name != "D" and operation.op == "insert_node":
+                new_node = self._node_from_patch_payload(operation.value.get("node"))
+                if new_node is None or new_node.node_id in records:
+                    continue
+                spec.nodes.append(new_node)
+                self._ensure_record_for_node(new_node, records)
+                applied = True
+            elif phase_name != "D" and operation.op == "split_node" and target_node_id:
+                split_nodes = operation.value.get("nodes")
+                if not isinstance(split_nodes, list):
+                    continue
+                previous_dependents = [
+                    edge_target
+                    for edge_source, edge_target in spec.edges
+                    if edge_source == target_node_id
+                ]
+                inserted_ids: list[str] = []
+                for raw_node in split_nodes:
+                    new_node = self._node_from_patch_payload(raw_node)
+                    if new_node is None or new_node.node_id in records:
+                        continue
+                    spec.nodes.append(new_node)
+                    self._ensure_record_for_node(new_node, records)
+                    inserted_ids.append(new_node.node_id)
+                for dependent_id in previous_dependents:
+                    self._remove_edge(spec, records, target_node_id, dependent_id)
+                for new_node_id in inserted_ids:
+                    self._add_edge(spec, records, target_node_id, new_node_id)
+                    for dependent_id in previous_dependents:
+                        self._add_edge(spec, records, new_node_id, dependent_id)
+                if inserted_ids:
+                    applied = True
+            elif phase_name != "D" and operation.op == "add_edge":
+                if operation.source_node_id and operation.target_node_id:
+                    applied = self._add_edge(
+                        spec,
+                        records,
+                        operation.source_node_id,
+                        operation.target_node_id,
+                    ) or applied
+            elif phase_name != "D" and operation.op == "remove_edge":
+                if operation.source_node_id and operation.target_node_id:
+                    applied = self._remove_edge(
+                        spec,
+                        records,
+                        operation.source_node_id,
+                        operation.target_node_id,
+                    ) or applied
+            elif phase_name != "D" and operation.op == "update_join_policy" and target_node_id in records:
+                records[target_node_id].graph_patch_history.append(
+                    {
+                        "patch_id": compiled.patch_id,
+                        "operation": to_plain_dict(operation),
+                        "note": "join_policy update recorded for future scheduler phases",
+                    }
+                )
+                applied = True
         if applied:
+            try:
+                self._topological_order(spec)
+            except ValueError as exc:
+                spec.nodes = original_nodes
+                spec.edges = original_edges
+                records.clear()
+                records.update(original_records)
+                self._record(
+                    run_id,
+                    record.node_id,
+                    "GraphPatchRolledBack",
+                    {
+                        "graph_id": spec.graph_id,
+                        "patch_id": compiled.patch_id,
+                        "reason": str(exc),
+                    },
+                )
+                return False
             self._record(
                 run_id,
                 record.node_id,
@@ -891,15 +1130,123 @@ Rules:
             )
         return applied
 
+    def _find_spec_node(self, spec: GraphRunSpec, node_id: str) -> NodeCapsule | None:
+        for node in spec.nodes:
+            if node.node_id == node_id:
+                return node
+        return None
+
+    def _node_from_patch_payload(self, raw: Any) -> NodeCapsule | None:
+        if not isinstance(raw, dict):
+            return None
+        node_id = str(raw.get("node_id") or "")
+        if not node_id:
+            return None
+        command = raw.get("command")
+        acceptance = raw.get("acceptance_criteria")
+        evidence = raw.get("required_evidence")
+        return NodeCapsule(
+            node_id=node_id,
+            phase=str(raw.get("phase") or "verification"),
+            goal=str(raw.get("goal") or f"Phase E inserted node {node_id}."),
+            command=[str(item) for item in command] if isinstance(command, list) else [],
+            acceptance_criteria=(
+                [str(item) for item in acceptance]
+                if isinstance(acceptance, list)
+                else ["Overlooker must cite evidence_ref before acceptance."]
+            ),
+            required_evidence=(
+                [str(item) for item in evidence]
+                if isinstance(evidence, list)
+                else ["log", "sandbox_events", "resource_report"]
+            ),
+            experience_pattern_ids=[
+                str(item)
+                for item in (
+                    raw.get("experience_pattern_ids")
+                    if isinstance(raw.get("experience_pattern_ids"), list)
+                    else []
+                )
+            ],
+            executor_kind=str(raw.get("executor_kind") or "subprocess"),
+            prompt=str(raw["prompt"]) if raw.get("prompt") is not None else None,
+        )
+
+    def _ensure_record_for_node(
+        self,
+        node: NodeCapsule,
+        records: dict[str, GraphNodeRecord],
+    ) -> None:
+        records[node.node_id] = GraphNodeRecord(
+            node_id=node.node_id,
+            read_only=self._is_read_only(node),
+            write_paths=self._write_paths(node),
+            experience_pattern_ids=list(node.experience_pattern_ids),
+        )
+
+    def _add_edge(
+        self,
+        spec: GraphRunSpec,
+        records: dict[str, GraphNodeRecord],
+        source_node_id: str,
+        target_node_id: str,
+    ) -> bool:
+        edge = (source_node_id, target_node_id)
+        if edge in spec.edges:
+            return False
+        spec.edges.append(edge)
+        if target_node_id in records and source_node_id not in records[target_node_id].depends_on:
+            records[target_node_id].depends_on.append(source_node_id)
+            records[target_node_id].depends_on.sort()
+        if source_node_id in records and target_node_id not in records[source_node_id].dependents:
+            records[source_node_id].dependents.append(target_node_id)
+            records[source_node_id].dependents.sort()
+        return True
+
+    def _remove_edge(
+        self,
+        spec: GraphRunSpec,
+        records: dict[str, GraphNodeRecord],
+        source_node_id: str,
+        target_node_id: str,
+    ) -> bool:
+        edge = (source_node_id, target_node_id)
+        if edge not in spec.edges:
+            return False
+        spec.edges = [existing for existing in spec.edges if existing != edge]
+        if target_node_id in records:
+            records[target_node_id].depends_on = [
+                node_id for node_id in records[target_node_id].depends_on
+                if node_id != source_node_id
+            ]
+        if source_node_id in records:
+            records[source_node_id].dependents = [
+                node_id for node_id in records[source_node_id].dependents
+                if node_id != target_node_id
+            ]
+        return True
+
     def _deterministic_review(
         self,
         node: NodeCapsule,
         evidence: EvidenceBundle,
         validator_reports: list[ValidatorReport],
         worker_result: WorkerResult,
+        workspace: Path | None = None,
     ) -> OverlookerReport:
         validators_passed = all(report.passed for report in validator_reports)
         can_pass = worker_result.exit_code == 0 and validators_passed and bool(evidence.evidence_ref.uri)
+        hint = self._read_overlooker_hint(workspace)
+        recommended_action = (
+            "advance"
+            if can_pass
+            else str(hint.get("recommended_action") or "retry_same_node")
+        )
+        failure_type = (
+            None
+            if can_pass
+            else str(hint.get("failure_type") or self._failure_code(worker_result, validator_reports))
+        )
         report = {
             "verdict": "pass" if can_pass else "fail",
             "rationale": (
@@ -911,8 +1258,8 @@ Rules:
             "cited_evidence": [evidence.evidence_ref.uri] if can_pass else [],
             "validator_refs": [report.validator_id for report in validator_reports],
             "confidence": "high",
-            "failure_type": None if can_pass else self._failure_code(worker_result, validator_reports),
-            "recommended_action": "advance" if can_pass else "retry_same_node",
+            "failure_type": failure_type,
+            "recommended_action": recommended_action,
             "release_overlooker": can_pass,
         }
         report_ref = self.artifacts.put_json(
@@ -935,6 +1282,18 @@ Rules:
             recommended_action=str(report["recommended_action"]),
             release_overlooker=bool(report["release_overlooker"]),
         )
+
+    def _read_overlooker_hint(self, workspace: Path | None) -> dict[str, Any]:
+        if workspace is None:
+            return {}
+        path = workspace / "overlooker_hint.json"
+        if not path.exists():
+            return {}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+        return data if isinstance(data, dict) else {}
 
     def _phase_e_enabled(self, phase: str, overlooker_mode: str) -> bool:
         return phase.upper() == "E" or overlooker_mode in {"phase_e", "codex_phase_e"}

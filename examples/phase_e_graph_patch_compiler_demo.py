@@ -11,15 +11,15 @@ from egtc_runtime_stagea.compiler import WorkflowCompiler
 from egtc_runtime_stagea.models import GraphPatch, GraphPatchOperation
 
 
-def patch(operation: GraphPatchOperation) -> GraphPatch:
+def patch(*operations: GraphPatchOperation) -> GraphPatch:
     return GraphPatch(
-        patch_id=f"phase-e-{operation.op}",
+        patch_id=f"phase-e-{operations[0].op}",
         director_id="director-phased",
         graph_id="phase-e-demo",
         triggering_node_id="implement",
         triggering_event="director_replan",
         overlooker_report_ref="artifact://phase-e-demo",
-        operations=[operation],
+        operations=list(operations),
         rationale="Phase E compiler demo.",
     )
 
@@ -41,7 +41,13 @@ def main() -> int:
                     }
                 },
                 rationale="Insert targeted tests before final verification.",
-            )
+            ),
+            GraphPatchOperation(
+                op="add_edge",
+                source_node_id="targeted-tests",
+                target_node_id="verify",
+                rationale="Targeted tests must run before final verification.",
+            ),
         ),
         known_nodes,
         "phase-e-demo",

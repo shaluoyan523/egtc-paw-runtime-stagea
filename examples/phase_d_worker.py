@@ -14,6 +14,7 @@ def main() -> int:
     fail_once = "--fail-once" in sys.argv
     poison_on_fail = "--poison-on-fail" in sys.argv
     fail_if_poisoned = "--fail-if-poisoned" in sys.argv
+    request_replan_once = "--request-replan-once" in sys.argv
 
     time.sleep(delay)
     runtime_attempt_path = Path(".egtc_attempt.json")
@@ -44,6 +45,16 @@ def main() -> int:
     if fail_once and runtime_attempt == 1:
         if poison_on_fail:
             poison_path.write_text("failed attempt contaminated this workspace\n", encoding="utf-8")
+        if request_replan_once:
+            Path("overlooker_hint.json").write_text(
+                json.dumps(
+                    {
+                        "recommended_action": "request_director_replan",
+                        "failure_type": "missing_diagnostic_node",
+                    }
+                ),
+                encoding="utf-8",
+            )
         print(
             json.dumps(
                 {

@@ -809,6 +809,8 @@ class WorkflowCompiler:
         phase: str = "D",
     ) -> CompiledGraphPatch:
         findings: list[dict[str, object]] = []
+        phase_name = phase.upper()
+        simulated_node_ids = set(known_node_ids)
         if not patch.patch_id:
             findings.append(
                 self._patch_finding(
@@ -852,7 +854,24 @@ class WorkflowCompiler:
                 )
             )
         for operation in patch.operations:
-            findings.extend(self._check_patch_operation(operation, patch, known_node_ids, phase))
+            op_findings = self._check_patch_operation(
+                operation,
+                patch,
+                simulated_node_ids,
+                phase,
+            )
+            findings.extend(op_findings)
+            if phase_name != "D" and not any(
+                finding["severity"] == "error" for finding in op_findings
+            ):
+                if operation.op == "insert_node":
+                    new_node = operation.value.get("node")
+                    if isinstance(new_node, dict):
+                        new_node_id = str(new_node.get("node_id") or "")
+                        if new_node_id:
+                            simulated_node_ids.add(new_node_id)
+        if phase_name != "D":
+            findings.extend(self._check_phase_e_reentry(patch, known_node_ids))
         return CompiledGraphPatch(
             accepted=not any(finding["severity"] == "error" for finding in findings),
             patch_id=patch.patch_id,
@@ -860,6 +879,57 @@ class WorkflowCompiler:
             operations=patch.operations,
             findings=findings,
         )
+
+    def _check_phase_e_reentry(
+        self,
+        patch: GraphPatch,
+        known_node_ids: set[str],
+    ) -> list[dict[str, object]]:
+        if patch.triggering_event != "overlooker_rejected_node":
+            return []
+        triggering = patch.triggering_node_id
+        if not triggering:
+            return []
+        inserted_ids: set[str] = set()
+        for operation in patch.operations:
+            if operation.op == "insert_node":
+                raw_node = operation.value.get("node")
+                if isinstance(raw_node, dict) and raw_node.get("node_id"):
+                    inserted_ids.add(str(raw_node["node_id"]))
+            elif operation.op == "split_node":
+                raw_nodes = operation.value.get("nodes")
+                if isinstance(raw_nodes, list):
+                    for raw_node in raw_nodes:
+                        if isinstance(raw_node, dict) and raw_node.get("node_id"):
+                            inserted_ids.add(str(raw_node["node_id"]))
+        reenters = any(
+            (
+                operation.op in {"retry_node", "replace_worker"}
+                and (operation.node_id or operation.target_node_id) == triggering
+            )
+            or (
+                operation.op == "add_edge"
+                and operation.target_node_id == triggering
+                and (
+                    operation.source_node_id in inserted_ids
+                    or operation.source_node_id in known_node_ids
+                )
+            )
+            for operation in patch.operations
+        )
+        if reenters:
+            return []
+        return [
+            self._patch_finding(
+                "error",
+                "phase_e_patch_missing_reentry",
+                (
+                    "Phase E patches for rejected nodes must retry/replace the triggering "
+                    "node or add a dependency edge that reconnects new work to it."
+                ),
+                triggering,
+            )
+        ]
 
     def _check_patch_operation(
         self,
