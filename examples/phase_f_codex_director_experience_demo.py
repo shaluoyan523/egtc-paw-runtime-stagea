@@ -39,6 +39,7 @@ def main() -> int:
         "compiled": structured(compiled),
         "director_mode": blueprint.director_mode,
         "director_session_id": blueprint.director_session_id,
+        "director_skill_usage": blueprint.director_skill_usage,
         "topology": blueprint.workflow_skeleton.topology,
         "agent_allocation": blueprint.workflow_skeleton.agent_allocation,
         "alternative_skeletons": blueprint.workflow_skeleton.alternative_skeletons,
@@ -101,6 +102,10 @@ def main() -> int:
         compiled.accepted
         and output["director_mode"] == "codex"
         and str(output["director_session_id"] or "").startswith("director-")
+        and output["director_skill_usage"].get("skill_name") == "director-deliberative-planning"
+        and output["director_skill_usage"].get("loaded") is True
+        and output["director_skill_usage"].get("skill_sha256")
+        and output["director_skill_usage"].get("schema_sha256")
         and output["experience_pattern_ids"]
         and output["node_count"] >= 3
         and total_agents == output["node_count"]

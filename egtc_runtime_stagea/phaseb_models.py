@@ -101,6 +101,7 @@ class WorkflowBlueprint:
     experience_pattern_ids: list[str] = field(default_factory=list)
     director_mode: str = "deterministic"
     director_session_id: str | None = None
+    director_skill_usage: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

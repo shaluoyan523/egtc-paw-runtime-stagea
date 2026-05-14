@@ -163,6 +163,7 @@ def main() -> int:
     finding_codes = [finding.code for finding in compiled.findings]
     print(json.dumps(structured(compiled), indent=2, sort_keys=True))
     expected = {
+        "director_missing_skill_usage",
         "director_missing_decision_basis",
     }
     return 0 if not compiled.accepted and expected.issubset(finding_codes) else 1

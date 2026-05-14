@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 import uuid
 import json
+import hashlib
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -215,7 +217,7 @@ class DirectorAgentV1:
             raise ValueError("plan_with_codex_director requires an ExperienceLibrary")
         workspace.mkdir(parents=True, exist_ok=True)
         seed_matches = self.experience_library.retrieve(objective, limit=16)
-        skill_packet = self._director_deliberative_planning_skill()
+        skill_packet = self._materialize_director_deliberative_planning_skill(workspace)
         input_packet = {
             "objective": objective,
             "repo_policy": to_plain_dict(repo_policy),
@@ -239,7 +241,7 @@ class DirectorAgentV1:
             "director_rules": [
                 "Director must choose how many agents/nodes are needed.",
                 "Director must compare multiple candidate workflow skeletons before selecting one.",
-                "Director must apply director_input.director_skill before emitting the final workflow.",
+                "Director must read the skill files named by director_input.director_skill before emitting the final workflow.",
                 "Director must first decompose the task into a linear requirement flow.",
                 "Director must choose the structure and agent allocation for each linear stage before creating final nodes.",
                 "Director must decide whether each specialized or uncertain stage needs research, and must mark blocked external research when network is unavailable.",
@@ -247,6 +249,7 @@ class DirectorAgentV1:
                 "Director must cite selected experience pattern ids.",
                 "Director must not request network or sandbox/permission expansion.",
                 "Director must keep verification read-only.",
+                "Director must include director_skill_usage with skill path and sha256 values copied from director_input.director_skill.",
                 "Director structured output is compiled before execution.",
             ],
         }
@@ -300,6 +303,7 @@ class DirectorAgentV1:
         output = self._read_director_output(workspace / "director_output.json")
         if not output:
             raise RuntimeError("Codex Director did not create a valid director_output.json")
+        self._validate_director_skill_usage(output, skill_packet)
         blueprint = self._blueprint_from_codex_director_output(
             output,
             objective,
@@ -317,9 +321,13 @@ You are the EGTC-PAW Phase F Director Agent.
 
 Read ./director_input.json and create ./director_output.json.
 
-You must apply director_input.director_skill. First produce deliberative planning
-artifacts, then derive the final workflow. Do not jump directly from objective to
-final nodes.
+You must read the Director skill files before planning:
+- ./skills/director-deliberative-planning/SKILL.md
+- ./skills/director-deliberative-planning/references/planning_schema.md
+
+Use the files named by director_input.director_skill. Then produce deliberative
+planning artifacts and derive the final workflow. Do not jump directly from
+objective to final nodes.
 
 You must choose and apply experience-library patterns yourself. This includes:
 - decomposing the objective into a linear requirement flow,
@@ -335,6 +343,22 @@ You must choose and apply experience-library patterns yourself. This includes:
 
 Output strict JSON:
 {
+  "director_skill_usage": {
+    "skill_name": "director-deliberative-planning",
+    "skill_path": "skills/director-deliberative-planning/SKILL.md",
+    "schema_path": "skills/director-deliberative-planning/references/planning_schema.md",
+    "skill_sha256": "copy from director_input.director_skill.skill_sha256",
+    "schema_sha256": "copy from director_input.director_skill.schema_sha256",
+    "loaded": true,
+    "applied_required_fields": [
+      "linear_requirement_flow",
+      "stage_structure_decisions",
+      "research_route_decisions",
+      "per_stage_agent_allocation",
+      "plan_derivation_trace",
+      "decision_basis"
+    ]
+  },
   "task_diagnosis": {
     "task_kind": "implementation" | "analysis" | "director_planning",
     "risk_level": "low" | "medium" | "high",
@@ -531,6 +555,9 @@ Output strict JSON:
 
 Rules:
 - Use only pattern ids present in director_input.experience_candidates.
+- Read ./skills/director-deliberative-planning/SKILL.md and ./skills/director-deliberative-planning/references/planning_schema.md before creating the final plan.
+- director_skill_usage.skill_sha256 and director_skill_usage.schema_sha256 must exactly match director_input.director_skill hashes.
+- If the skill files cannot be read, do not invent a plan; write director_skill_usage.loaded=false and explain the missing file in task_diagnosis.unknowns.
 - Do not assume a fixed number of agents. Derive total_agents from task complexity, uncertainty, dependency breadth, validation surface, risk, and available evidence.
 - The current task may need 1 agent, 4 agents, dozens of agents, or a staged plan that can grow toward hundreds. If the full scale is not needed now, explain the scale triggers.
 - Compare at least three candidate skeletons, including a small conservative plan, a medium plan, and a larger scalable plan.
@@ -727,6 +754,11 @@ Rules:
             experience_pattern_ids=skeleton.experience_pattern_ids,
             director_mode="codex",
             director_session_id=director_session_id,
+            director_skill_usage=(
+                output.get("director_skill_usage")
+                if isinstance(output.get("director_skill_usage"), dict)
+                else {}
+            ),
         )
 
     def _grounding_from_director(
@@ -776,7 +808,55 @@ Rules:
             "schema_path": str(schema_path),
             "instructions": skill_path.read_text(encoding="utf-8") if skill_path.exists() else "",
             "planning_schema": schema_path.read_text(encoding="utf-8") if schema_path.exists() else "",
+            "skill_sha256": self._sha256(skill_path),
+            "schema_sha256": self._sha256(schema_path),
         }
+
+    def _materialize_director_deliberative_planning_skill(self, workspace: Path) -> dict[str, str]:
+        source_packet = self._director_deliberative_planning_skill()
+        source_root = Path(source_packet["skill_path"]).parent
+        target_root = workspace / "skills" / "director-deliberative-planning"
+        if target_root.exists():
+            shutil.rmtree(target_root)
+        shutil.copytree(source_root, target_root)
+        skill_path = target_root / "SKILL.md"
+        schema_path = target_root / "references" / "planning_schema.md"
+        return {
+            "name": "director-deliberative-planning",
+            "skill_path": "skills/director-deliberative-planning/SKILL.md",
+            "schema_path": "skills/director-deliberative-planning/references/planning_schema.md",
+            "skill_sha256": self._sha256(skill_path),
+            "schema_sha256": self._sha256(schema_path),
+        }
+
+    def _validate_director_skill_usage(
+        self,
+        output: dict[str, Any],
+        skill_packet: dict[str, str],
+    ) -> None:
+        usage = output.get("director_skill_usage")
+        if not isinstance(usage, dict):
+            raise ValueError("Codex Director output is missing director_skill_usage")
+        expected = {
+            "skill_name": skill_packet["name"],
+            "skill_path": skill_packet["skill_path"],
+            "schema_path": skill_packet["schema_path"],
+            "skill_sha256": skill_packet["skill_sha256"],
+            "schema_sha256": skill_packet["schema_sha256"],
+        }
+        for key, value in expected.items():
+            if usage.get(key) != value:
+                raise ValueError(
+                    f"Codex Director skill usage mismatch for {key}: "
+                    f"expected {value!r}, got {usage.get(key)!r}"
+                )
+        if usage.get("loaded") is not True:
+            raise ValueError("Codex Director did not mark director skill as loaded")
+
+    def _sha256(self, path: Path) -> str:
+        if not path.exists():
+            return ""
+        return hashlib.sha256(path.read_bytes()).hexdigest()
 
     def _active_director_pattern_ids(
         self,

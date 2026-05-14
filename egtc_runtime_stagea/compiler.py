@@ -249,7 +249,82 @@ class WorkflowCompiler:
                     "Codex Director must explain why selected experience patterns fit the task.",
                 )
             )
+        findings.extend(self._check_director_skill_usage(blueprint))
         findings.extend(self._check_director_planning_skill(skeleton))
+        return findings
+
+    def _check_director_skill_usage(self, blueprint: WorkflowBlueprint) -> list[CompilerFinding]:
+        usage = blueprint.director_skill_usage
+        if not usage:
+            return [
+                CompilerFinding(
+                    "error",
+                    "director_missing_skill_usage",
+                    "Codex Director must report loading the director-deliberative-planning skill.",
+                )
+            ]
+        required = {
+            "skill_name",
+            "skill_path",
+            "schema_path",
+            "skill_sha256",
+            "schema_sha256",
+            "loaded",
+            "applied_required_fields",
+        }
+        findings: list[CompilerFinding] = []
+        missing = sorted(required - set(usage))
+        if missing:
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "director_skill_usage_missing_keys",
+                    f"director_skill_usage is missing keys: {missing}",
+                )
+            )
+        if usage.get("skill_name") != "director-deliberative-planning":
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "director_skill_usage_wrong_skill",
+                    "Codex Director must use director-deliberative-planning.",
+                )
+            )
+        if usage.get("loaded") is not True:
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "director_skill_not_loaded",
+                    "Codex Director must mark director_skill_usage.loaded=true.",
+                )
+            )
+        required_fields = {
+            "linear_requirement_flow",
+            "stage_structure_decisions",
+            "research_route_decisions",
+            "per_stage_agent_allocation",
+            "plan_derivation_trace",
+            "decision_basis",
+        }
+        applied = usage.get("applied_required_fields")
+        if not isinstance(applied, list) or not required_fields.issubset(set(applied)):
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "director_skill_usage_missing_applied_fields",
+                    "director_skill_usage must list all required planning fields applied from the skill.",
+                )
+            )
+        for key in ["skill_sha256", "schema_sha256", "skill_path", "schema_path"]:
+            value = usage.get(key)
+            if not isinstance(value, str) or not value.strip():
+                findings.append(
+                    CompilerFinding(
+                        "error",
+                        "director_skill_usage_empty_value",
+                        f"director_skill_usage.{key} must be a non-empty string.",
+                    )
+                )
         return findings
 
     def _check_director_planning_skill(self, skeleton) -> list[CompilerFinding]:
