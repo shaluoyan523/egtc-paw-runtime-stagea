@@ -1,0 +1,51 @@
+{
+  "anti_signals": [
+    "pure chat",
+    "无产物"
+  ],
+  "applicability_signals": [
+    "artifact",
+    "evidence",
+    "工件",
+    "证据",
+    "swe",
+    "patch",
+    "代码"
+  ],
+  "confidence_score": 6.0,
+  "description": "Use artifact-chain handoff for software engineering nodes where the next step consumes code, logs, test output, and evidence refs.",
+  "evidence_level": "mixed",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-handoff-artifact-chain",
+  "pattern_type": "handoff",
+  "recommended_structure": {
+    "handoff_unit": "artifact_chain",
+    "receiver": "next_graph_node_or_overlooker",
+    "state_transfer": [
+      "workspace_diff",
+      "test_report",
+      "evidence_ref"
+    ]
+  },
+  "required_evidence": [
+    "diff",
+    "test",
+    "log"
+  ],
+  "risk_notes": [
+    "Artifact handoff is not a substitute for checkpointed workspace state."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/handoff_contracts_and_state_transfer.html",
+    "多agent编排报告_20260421.zip: research/software_company_orchestration_source.md"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "handoff",
+    "artifact",
+    "state"
+  ],
+  "version": 1
+}

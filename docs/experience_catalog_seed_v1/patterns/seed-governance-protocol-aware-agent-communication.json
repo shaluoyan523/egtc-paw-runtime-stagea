@@ -1,0 +1,56 @@
+{
+  "anti_signals": [
+    "自由聊天即可",
+    "single agent",
+    "no interaction contract"
+  ],
+  "applicability_signals": [
+    "protocol",
+    "agent-to-agent",
+    "a2a",
+    "message order",
+    "通信协议",
+    "协议",
+    "角色承诺"
+  ],
+  "confidence_score": 5.5,
+  "description": "Use explicit interaction protocols for agent-to-agent communication when correctness depends on legal message order, role commitments, or protocol safety.",
+  "evidence_level": "direct",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-governance-protocol-aware-agent-communication",
+  "pattern_type": "governance",
+  "recommended_structure": {
+    "audit_policy": "persist_protocol_events_as_trace_evidence",
+    "protocol_spec": [
+      "roles",
+      "allowed_message_types",
+      "turn_order",
+      "termination_condition"
+    ],
+    "runtime_check": "reject_messages_outside_protocol_contract"
+  },
+  "required_evidence": [
+    "protocol_spec",
+    "message_trace",
+    "termination_event"
+  ],
+  "risk_notes": [
+    "Protocol constraints help reproducibility but can slow exploratory collaboration.",
+    "Protocol validation should be separate from model judgment."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/ahoy_llms_enacting_multiagent_interaction_protocols.html",
+    "多agent编排报告_20260421.zip: site/a2asecbench_a_protocol_aware_security_benchmark_for_agent_to_agent_multi_agent_systems.html",
+    "多agent编排报告_20260421.zip: site/marble_coordination_modes_and_iteration_control.html"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "protocol",
+    "communication",
+    "audit",
+    "a2a"
+  ],
+  "version": 1
+}

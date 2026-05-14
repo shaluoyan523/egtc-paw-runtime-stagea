@@ -1,0 +1,60 @@
+{
+  "anti_signals": [
+    "stateless",
+    "一次性",
+    "no historical evidence"
+  ],
+  "applicability_signals": [
+    "stackplanner",
+    "hierarchical",
+    "memory",
+    "经验",
+    "经验库",
+    "层级规划",
+    "任务分解",
+    "reuse prior"
+  ],
+  "confidence_score": 7.0,
+  "description": "Use a centralized hierarchical planner backed by task experience memory when the system must decompose work and reuse prior plans.",
+  "evidence_level": "direct",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-memory-hierarchical-task-experience-planner",
+  "pattern_type": "memory_planning",
+  "recommended_structure": {
+    "memory_use": [
+      "retrieve_patterns",
+      "compare_prior_outcomes",
+      "record_observations"
+    ],
+    "planner_layers": [
+      "task_diagnosis",
+      "subtask_tree",
+      "experience_retrieval",
+      "execution_plan"
+    ],
+    "replan_policy": "update subtask tree when memory evidence conflicts with current validation"
+  },
+  "required_evidence": [
+    "retrieved_experience_refs",
+    "subtask_tree",
+    "memory_update_refs"
+  ],
+  "risk_notes": [
+    "Experience memory should influence structure but must not bypass compiler checks.",
+    "Stale experience needs versioning and demotion when runtime evidence degrades."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/stackplanner_a_centralized_hierarchical_multi_agent_system_with_task_experience_memory_management.html",
+    "多agent编排报告_20260421.zip: site/scaling_teams_or_scaling_time_memory_enabled_lifelong_learning_in_llm_multi_agent_systems.html"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "memory",
+    "hierarchical",
+    "planner",
+    "experience"
+  ],
+  "version": 1
+}

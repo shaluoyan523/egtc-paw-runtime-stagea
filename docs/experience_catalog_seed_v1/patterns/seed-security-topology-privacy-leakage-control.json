@@ -1,0 +1,59 @@
+{
+  "anti_signals": [
+    "公开数据",
+    "no trust boundary",
+    "toy benchmark"
+  ],
+  "applicability_signals": [
+    "security",
+    "privacy",
+    "leakage",
+    "collusion",
+    "attack",
+    "隐私",
+    "泄漏",
+    "安全",
+    "通信攻击"
+  ],
+  "confidence_score": 6.5,
+  "description": "Choose topology and communication exposure with privacy leakage, collusion, and communication-attack risks in mind.",
+  "evidence_level": "direct",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-security-topology-privacy-leakage-control",
+  "pattern_type": "security_policy",
+  "recommended_structure": {
+    "review_gate": "security_overlooker_for_sensitive_cross_agent_handoffs",
+    "risk_model": [
+      "memory_leakage",
+      "collusion",
+      "communication_attack",
+      "sensitive_artifact_exposure"
+    ],
+    "topology_preference": "least_exposure_edges_with_auditable_handoffs"
+  },
+  "required_evidence": [
+    "trust_boundary_map",
+    "handoff_refs",
+    "security_review_result"
+  ],
+  "risk_notes": [
+    "Do not broadcast sensitive artifacts when a point-to-point handoff is enough.",
+    "Security patterns constrain communication shape; they do not grant new authority."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/topology_matters_measuring_memory_leakage_in_multi_agent_llms.html",
+    "多agent编排报告_20260421.zip: site/g_safeguard_a_topology_guided_security_lens_and_treatment_on_llm_based_multi_agent_systems.html",
+    "多agent编排报告_20260421.zip: site/agentleak_a_full_stack_benchmark_for_privacy_leakage_in_multi_agent_llm_systems.html",
+    "多agent编排报告_20260421.zip: site/red_teaming_llm_multi_agent_systems_via_communication_attacks.html"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "security",
+    "privacy",
+    "topology",
+    "handoff"
+  ],
+  "version": 1
+}

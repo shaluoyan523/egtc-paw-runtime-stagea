@@ -1,0 +1,56 @@
+{
+  "anti_signals": [
+    "strict manual only",
+    "不可自修改",
+    "审计不可缺失"
+  ],
+  "applicability_signals": [
+    "mas2",
+    "self-generative",
+    "self-configuring",
+    "self-rectifying",
+    "自生成",
+    "自配置",
+    "自纠错",
+    "自动修正"
+  ],
+  "confidence_score": 5.5,
+  "description": "Let the system propose configuration, execution, and rectification changes, but require explicit validation gates before accepting self-changes.",
+  "evidence_level": "direct",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-generation-self-configuring-rectifying-mas",
+  "pattern_type": "agent_generation",
+  "recommended_structure": {
+    "acceptance_gate": "structured_patch_compiler_then_overlooker",
+    "rollback_policy": "retain_last_accepted_configuration_checkpoint",
+    "self_cycle": [
+      "generate_structure",
+      "configure_roles",
+      "execute",
+      "rectify_from_feedback"
+    ]
+  },
+  "required_evidence": [
+    "configuration_delta",
+    "feedback_refs",
+    "acceptance_gate_result"
+  ],
+  "risk_notes": [
+    "Self-configuration must create proposals, not directly mutate trusted runtime policy.",
+    "Repeated self-rectification with the same failure type should force Director replan."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/mas2_self_generative_self_configuring_self_rectifying_multi_agent_systems.html",
+    "多agent编排报告_20260421.zip: site/dover_intervention_driven_auto_debugging_for_llm_multi_agent_systems.html"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "self-configuring",
+    "rectification",
+    "feedback",
+    "proposal"
+  ],
+  "version": 1
+}

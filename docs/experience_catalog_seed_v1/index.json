@@ -1,0 +1,329 @@
+{
+  "catalog_schema": "egtc.experience.catalog.v1",
+  "pattern_count": 22,
+  "pattern_type_counts": {
+    "agent_generation": 2,
+    "aggregation": 1,
+    "dynamic_topology": 1,
+    "failure_policy": 2,
+    "governance": 3,
+    "handoff": 1,
+    "memory_planning": 2,
+    "review_loop": 2,
+    "routing": 3,
+    "scaling_policy": 1,
+    "security_policy": 1,
+    "tool_planning": 1,
+    "topology": 2
+  },
+  "patterns": [
+    {
+      "confidence_score": 7.0,
+      "description": "Use layered proposer agents followed by aggregator agents when answer quality benefits from independent proposals and synthesis.",
+      "evidence_level": "direct",
+      "path": "patterns/seed-aggregation-layered-proposer-aggregator.json",
+      "pattern_id": "seed-aggregation-layered-proposer-aggregator",
+      "pattern_type": "aggregation",
+      "tags": [
+        "aggregation",
+        "ensemble",
+        "proposer",
+        "synthesis",
+        "moa"
+      ]
+    },
+    {
+      "confidence_score": 6.5,
+      "description": "Adapt the collaboration topology during reasoning by semantically routing work to agents whose prior outputs best match the current subproblem.",
+      "evidence_level": "direct",
+      "path": "patterns/seed-dynamic-topology-semantic-routing.json",
+      "pattern_id": "seed-dynamic-topology-semantic-routing",
+      "pattern_type": "dynamic_topology",
+      "tags": [
+        "routing",
+        "dynamic",
+        "topology",
+        "semantic"
+      ]
+    },
+    {
+      "confidence_score": 6.5,
+      "description": "Use intervention-driven debugging when a multi-agent run fails: classify failure, patch the workflow or node prompt, and retry from the last sound checkpoint.",
+      "evidence_level": "direct",
+      "path": "patterns/seed-failure-intervention-debugging-loop.json",
+      "pattern_id": "seed-failure-intervention-debugging-loop",
+      "pattern_type": "failure_policy",
+      "tags": [
+        "debugging",
+        "retry",
+        "checkpoint",
+        "overlooker"
+      ]
+    },
+    {
+      "confidence_score": 8.0,
+      "description": "Bound retries with same-failure counters, attempt limits, timeout/resource reports, and explicit stop or replan events.",
+      "evidence_level": "strong",
+      "path": "patterns/seed-failure-watchdog-budget.json",
+      "pattern_id": "seed-failure-watchdog-budget",
+      "pattern_type": "failure_policy",
+      "tags": [
+        "retry",
+        "watchdog",
+        "budget",
+        "replan"
+      ]
+    },
+    {
+      "confidence_score": 5.5,
+      "description": "Generate and select agent variants through evolutionary search when the right role composition is unknown and can be evaluated by a metric.",
+      "evidence_level": "direct",
+      "path": "patterns/seed-generation-evolutionary-agent-search.json",
+      "pattern_id": "seed-generation-evolutionary-agent-search",
+      "pattern_type": "agent_generation",
+      "tags": [
+        "agent-generation",
+        "evolution",
+        "optimization",
+        "metric"
+      ]
+    },
+    {
+      "confidence_score": 5.5,
+      "description": "Let the system propose configuration, execution, and rectification changes, but require explicit validation gates before accepting self-changes.",
+      "evidence_level": "direct",
+      "path": "patterns/seed-generation-self-configuring-rectifying-mas.json",
+      "pattern_id": "seed-generation-self-configuring-rectifying-mas",
+      "pattern_type": "agent_generation",
+      "tags": [
+        "self-configuring",
+        "rectification",
+        "feedback",
+        "proposal"
+      ]
+    },
+    {
+      "confidence_score": 6.0,
+      "description": "Model a software task as company-like roles with staged artifacts, role-specific responsibilities, and review/promotion boundaries.",
+      "evidence_level": "mixed",
+      "path": "patterns/seed-governance-company-role-lifecycle.json",
+      "pattern_id": "seed-governance-company-role-lifecycle",
+      "pattern_type": "governance",
+      "tags": [
+        "role-template",
+        "company",
+        "artifact",
+        "qa"
+      ]
+    },
+    {
+      "confidence_score": 6.0,
+      "description": "Use cross-team orchestration when independent teams must solve different parts and exchange bounded summaries through team leads.",
+      "evidence_level": "direct",
+      "path": "patterns/seed-governance-cross-team-orchestration.json",
+      "pattern_id": "seed-governance-cross-team-orchestration",
+      "pattern_type": "governance",
+      "tags": [
+        "team",
+        "governance",
+        "hierarchy",
+        "handoff"
+      ]
+    },
+    {
+      "confidence_score": 5.5,
+      "description": "Use explicit interaction protocols for agent-to-agent communication when correctness depends on legal message order, role commitments, or protocol safety.",
+      "evidence_level": "direct",
+      "path": "patterns/seed-governance-protocol-aware-agent-communication.json",
+      "pattern_id": "seed-governance-protocol-aware-agent-communication",
+      "pattern_type": "governance",
+      "tags": [
+        "protocol",
+        "communication",
+        "audit",
+        "a2a"
+      ]
+    },
+    {
+      "confidence_score": 6.0,
+      "description": "Use artifact-chain handoff for software engineering nodes where the next step consumes code, logs, test output, and evidence refs.",
+      "evidence_level": "mixed",
+      "path": "patterns/seed-handoff-artifact-chain.json",
+      "pattern_id": "seed-handoff-artifact-chain",
+      "pattern_type": "handoff",
+      "tags": [
+        "handoff",
+        "artifact",
+        "state"
+      ]
+    },
+    {
+      "confidence_score": 7.0,
+      "description": "Use a centralized hierarchical planner backed by task experience memory when the system must decompose work and reuse prior plans.",
+      "evidence_level": "direct",
+      "path": "patterns/seed-memory-hierarchical-task-experience-planner.json",
+      "pattern_id": "seed-memory-hierarchical-task-experience-planner",
+      "pattern_type": "memory_planning",
+      "tags": [
+        "memory",
+        "hierarchical",
+        "planner",
+        "experience"
+      ]
+    },
+    {
+      "confidence_score": 6.0,
+      "description": "Prefer richer memory and staged time scaling before adding many agents when the bottleneck is continuity rather than independent parallel work.",
+      "evidence_level": "direct",
+      "path": "patterns/seed-memory-scale-time-before-team-size.json",
+      "pattern_id": "seed-memory-scale-time-before-team-size",
+      "pattern_type": "memory_planning",
+      "tags": [
+        "memory",
+        "scaling",
+        "lifelong",
+        "context"
+      ]
+    },
+    {
+      "confidence_score": 7.0,
+      "description": "Plan tasks around verifiability by creating evidence targets before worker execution and routing uncertain claims to explicit checks.",
+      "evidence_level": "direct",
+      "path": "patterns/seed-review-verification-aware-planning.json",
+      "pattern_id": "seed-review-verification-aware-planning",
+      "pattern_type": "review_loop",
+      "tags": [
+        "verification",
+        "review",
+        "evidence",
+        "acceptance"
+      ]
+    },
+    {
+      "confidence_score": 8.0,
+      "description": "Treat review and rework as a first-class loop with explicit evidence citation and re-entry target.",
+      "evidence_level": "strong",
+      "path": "patterns/seed-role-overlooker-review-rework.json",
+      "pattern_id": "seed-role-overlooker-review-rework",
+      "pattern_type": "review_loop",
+      "tags": [
+        "overlooker",
+        "review",
+        "retry",
+        "validation"
+      ]
+    },
+    {
+      "confidence_score": 5.5,
+      "description": "Recruit additional agents or tools when independent agents disagree in a way that exposes missing evidence or capability gaps.",
+      "evidence_level": "direct",
+      "path": "patterns/seed-routing-disagreement-based-recruitment.json",
+      "pattern_id": "seed-routing-disagreement-based-recruitment",
+      "pattern_type": "routing",
+      "tags": [
+        "disagreement",
+        "routing",
+        "recruitment",
+        "uncertainty"
+      ]
+    },
+    {
+      "confidence_score": 6.5,
+      "description": "Use learned or lightweight gate routing when the main decision is which agent, model, or tool specialist should receive the next task.",
+      "evidence_level": "direct",
+      "path": "patterns/seed-routing-learned-mas-gates.json",
+      "pattern_id": "seed-routing-learned-mas-gates",
+      "pattern_type": "routing",
+      "tags": [
+        "routing",
+        "gate",
+        "specialist",
+        "low-latency"
+      ]
+    },
+    {
+      "confidence_score": 6.5,
+      "description": "Select routing surfaces by task shape: graph edges for explicit dependencies, message/team routing for deliberation, planner recipient routing for tool-specialized workers.",
+      "evidence_level": "mixed",
+      "path": "patterns/seed-routing-message-or-graph-edge.json",
+      "pattern_id": "seed-routing-message-or-graph-edge",
+      "pattern_type": "routing",
+      "tags": [
+        "routing",
+        "scheduler",
+        "graph"
+      ]
+    },
+    {
+      "confidence_score": 6.5,
+      "description": "Scale to large agent teams through staged hierarchy, delegated subgroups, and promotion of local results to higher-level synthesis.",
+      "evidence_level": "direct",
+      "path": "patterns/seed-scaling-large-dynamic-hierarchy.json",
+      "pattern_id": "seed-scaling-large-dynamic-hierarchy",
+      "pattern_type": "scaling_policy",
+      "tags": [
+        "scaling",
+        "hierarchy",
+        "large-team",
+        "director"
+      ]
+    },
+    {
+      "confidence_score": 6.5,
+      "description": "Choose topology and communication exposure with privacy leakage, collusion, and communication-attack risks in mind.",
+      "evidence_level": "direct",
+      "path": "patterns/seed-security-topology-privacy-leakage-control.json",
+      "pattern_id": "seed-security-topology-privacy-leakage-control",
+      "pattern_type": "security_policy",
+      "tags": [
+        "security",
+        "privacy",
+        "topology",
+        "handoff"
+      ]
+    },
+    {
+      "confidence_score": 5.5,
+      "description": "Use context-efficient depth-first tool planning when the task requires many tool calls and only a narrow frontier should stay in context.",
+      "evidence_level": "direct",
+      "path": "patterns/seed-tool-planning-context-efficient-search.json",
+      "pattern_id": "seed-tool-planning-context-efficient-search",
+      "pattern_type": "tool_planning",
+      "tags": [
+        "tool-planning",
+        "context",
+        "search",
+        "handoff"
+      ]
+    },
+    {
+      "confidence_score": 7.0,
+      "description": "Represent collaboration as a typed agent graph with message passing when dependencies are non-linear and intermediate reasoning must be recombined.",
+      "evidence_level": "direct",
+      "path": "patterns/seed-topology-graph-of-agents-message-passing.json",
+      "pattern_id": "seed-topology-graph-of-agents-message-passing",
+      "pattern_type": "topology",
+      "tags": [
+        "graph",
+        "topology",
+        "message",
+        "collaboration"
+      ]
+    },
+    {
+      "confidence_score": 7.0,
+      "description": "Use parallel read-only exploration before a single writer and verification gate for complex engineering work.",
+      "evidence_level": "strong",
+      "path": "patterns/seed-topology-parallel-explore-implement-verify.json",
+      "pattern_id": "seed-topology-parallel-explore-implement-verify",
+      "pattern_type": "topology",
+      "tags": [
+        "director",
+        "workflow",
+        "parallel",
+        "worker"
+      ]
+    }
+  ],
+  "schema": "egtc.experience.catalog.v1.directory"
+}

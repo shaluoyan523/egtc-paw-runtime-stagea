@@ -1,0 +1,57 @@
+{
+  "anti_signals": [
+    "不可测试",
+    "纯主观创作",
+    "no evaluator"
+  ],
+  "applicability_signals": [
+    "verification-aware",
+    "verifiable",
+    "验证优先",
+    "可验证",
+    "测试证据",
+    "校验",
+    "acceptance"
+  ],
+  "confidence_score": 7.0,
+  "description": "Plan tasks around verifiability by creating evidence targets before worker execution and routing uncertain claims to explicit checks.",
+  "evidence_level": "direct",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-review-verification-aware-planning",
+  "pattern_type": "review_loop",
+  "recommended_structure": {
+    "gate": "overlooker_acceptance_after_validator",
+    "planning_order": [
+      "define_acceptance",
+      "map_evidence_targets",
+      "execute",
+      "verify",
+      "repair_or_accept"
+    ],
+    "uncertainty_policy": "claims_without_evidence_become_verification_nodes"
+  },
+  "required_evidence": [
+    "acceptance_criteria",
+    "evidence_targets",
+    "validator_findings"
+  ],
+  "risk_notes": [
+    "Verification-aware planning can add overhead for low-risk exploratory work.",
+    "Claims without evidence should not be promoted into accepted artifacts."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/verification_aware_planning_for_multi_agent_systems.html",
+    "多agent编排报告_20260421.zip: site/benchmark_judge_and_evaluator_loop.html",
+    "多agent编排报告_20260421.zip: site/engineering_review_queues_and_validation_gates.html"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "verification",
+    "review",
+    "evidence",
+    "acceptance"
+  ],
+  "version": 1
+}

@@ -1,0 +1,62 @@
+{
+  "anti_signals": [
+    "小任务",
+    "single file",
+    "低风险局部改动"
+  ],
+  "applicability_signals": [
+    "megaagent",
+    "large scale",
+    "hundreds",
+    "dozens",
+    "大规模",
+    "上百",
+    "数十",
+    "复杂到超出预期",
+    "scale"
+  ],
+  "confidence_score": 6.5,
+  "description": "Scale to large agent teams through staged hierarchy, delegated subgroups, and promotion of local results to higher-level synthesis.",
+  "evidence_level": "direct",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-scaling-large-dynamic-hierarchy",
+  "pattern_type": "scaling_policy",
+  "recommended_structure": {
+    "agent_count_policy": "Director estimates current need and declares replan thresholds for larger tiers",
+    "coordination_policy": "subteam_leads_summarize_to_single_director",
+    "expansion_triggers": [
+      "module_count_growth",
+      "independent_subproblem_growth",
+      "validation_surface_growth"
+    ],
+    "scaling_levels": [
+      "single_team",
+      "multi_team",
+      "hierarchical_program"
+    ]
+  },
+  "required_evidence": [
+    "agent_allocation",
+    "scale_triggers",
+    "subteam_boundaries"
+  ],
+  "risk_notes": [
+    "Large teams need explicit subteam boundaries to avoid duplicate writes and uncontrolled communication.",
+    "Scaling should be staged; a larger plan is held as a replan option until triggers are met."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/megaagent_a_large_scale_autonomous_llm_based_multi_agent_system_without_predefined_sops.html",
+    "多agent编排报告_20260421.zip: site/scaling_large_language_model_based_multi_agent_collaboration.html",
+    "多agent编排报告_20260421.zip: site/towards_a_science_of_scaling_agent_systems.html"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "scaling",
+    "hierarchy",
+    "large-team",
+    "director"
+  ],
+  "version": 1
+}

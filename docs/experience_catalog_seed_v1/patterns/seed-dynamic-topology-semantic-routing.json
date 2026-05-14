@@ -1,0 +1,51 @@
+{
+  "anti_signals": [
+    "固定流程",
+    "static dag only",
+    "合规审计要求固定路径"
+  ],
+  "applicability_signals": [
+    "dytopo",
+    "dynamic topology",
+    "semantic routing",
+    "动态拓扑",
+    "动态路由",
+    "语义匹配",
+    "uncertain route"
+  ],
+  "confidence_score": 6.5,
+  "description": "Adapt the collaboration topology during reasoning by semantically routing work to agents whose prior outputs best match the current subproblem.",
+  "evidence_level": "direct",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-dynamic-topology-semantic-routing",
+  "pattern_type": "dynamic_topology",
+  "recommended_structure": {
+    "agent_count_policy": "start_small_then_expand_when_route_entropy_remains_high",
+    "routing_policy": "semantic_match_to_active_agent_state",
+    "stability_guard": "require_replan_on_repeated_route_failure",
+    "topology_update": "bounded_edge_rewrite_with_trace"
+  },
+  "required_evidence": [
+    "route_scores",
+    "topology_changes",
+    "deliberation_trace"
+  ],
+  "risk_notes": [
+    "Dynamic routing needs explicit trace evidence so later validation can replay why an edge changed.",
+    "Repeated route churn should trigger Director replan instead of unbounded self-adjustment."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/dytopo_dynamic_topology_routing_for_multi_agent_reasoning_via_semantic_matching.html",
+    "多agent编排报告_20260421.zip: site/masrouter_learning_to_route_llms_for_multi_agent_systems.html"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "routing",
+    "dynamic",
+    "topology",
+    "semantic"
+  ],
+  "version": 1
+}

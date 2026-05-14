@@ -1,0 +1,56 @@
+{
+  "anti_signals": [
+    "one shot",
+    "不重试"
+  ],
+  "applicability_signals": [
+    "retry",
+    "失败",
+    "超时",
+    "budget",
+    "livelock",
+    "deadlock",
+    "重试",
+    "重规划"
+  ],
+  "confidence_score": 8.0,
+  "description": "Bound retries with same-failure counters, attempt limits, timeout/resource reports, and explicit stop or replan events.",
+  "evidence_level": "strong",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-failure-watchdog-budget",
+  "pattern_type": "failure_policy",
+  "recommended_structure": {
+    "escalation": [
+      "abort_livelock",
+      "request_director_replan"
+    ],
+    "guards": [
+      "max_attempts",
+      "retry_budget",
+      "max_same_failure_retries"
+    ]
+  },
+  "required_evidence": [
+    "resource_report",
+    "sandbox_events",
+    "failure_type"
+  ],
+  "risk_notes": [
+    "Do not retry indefinitely.",
+    "Fork retries from accepted upstream workspaces when possible."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/open_source_stop_timeout_watchdog_and_budget_guards.html",
+    "多agent编排报告_20260421.zip: site/open_source_failure_escalation_retry_and_fallback.html"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "retry",
+    "watchdog",
+    "budget",
+    "replan"
+  ],
+  "version": 1
+}

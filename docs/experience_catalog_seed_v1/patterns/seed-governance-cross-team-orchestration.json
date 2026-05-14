@@ -1,0 +1,54 @@
+{
+  "anti_signals": [
+    "单人任务",
+    "无模块边界",
+    "tight write conflict"
+  ],
+  "applicability_signals": [
+    "cross-team",
+    "team",
+    "多团队",
+    "跨团队",
+    "subteam",
+    "团队协作",
+    "large project"
+  ],
+  "confidence_score": 6.0,
+  "description": "Use cross-team orchestration when independent teams must solve different parts and exchange bounded summaries through team leads.",
+  "evidence_level": "direct",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-governance-cross-team-orchestration",
+  "pattern_type": "governance",
+  "recommended_structure": {
+    "coordination_layer": "Director receives team lead reports and emits graph patches when needed",
+    "handoff_policy": "team_summary_and_artifact_refs_only_across_boundaries",
+    "team_units": [
+      "team_lead",
+      "specialist_workers",
+      "team_verifier"
+    ]
+  },
+  "required_evidence": [
+    "team_boundary_map",
+    "team_reports",
+    "cross_team_handoff_refs"
+  ],
+  "risk_notes": [
+    "Cross-team work needs clear ownership boundaries before write nodes run.",
+    "Team leads should summarize evidence rather than exposing every private scratch note."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/multi_agent_collaboration_via_cross_team_orchestration.html",
+    "多agent编排报告_20260421.zip: site/open_source_coordinator_shells_and_team_hierarchies.html"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "team",
+    "governance",
+    "hierarchy",
+    "handoff"
+  ],
+  "version": 1
+}

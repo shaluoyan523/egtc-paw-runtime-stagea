@@ -1,0 +1,66 @@
+{
+  "anti_signals": [
+    "无角色区分",
+    "只需单步修复",
+    "freeform brainstorm"
+  ],
+  "applicability_signals": [
+    "orgagent",
+    "company",
+    "metagpt",
+    "chatdev",
+    "软件公司",
+    "角色分工",
+    "产品",
+    "工程",
+    "qa"
+  ],
+  "confidence_score": 6.0,
+  "description": "Model a software task as company-like roles with staged artifacts, role-specific responsibilities, and review/promotion boundaries.",
+  "evidence_level": "mixed",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-governance-company-role-lifecycle",
+  "pattern_type": "governance",
+  "recommended_structure": {
+    "artifact_promotions": [
+      "requirements",
+      "design_notes",
+      "patch",
+      "test_report",
+      "release_summary"
+    ],
+    "ownership_policy": "each role owns outputs but Director controls workflow promotion",
+    "role_lifecycle": [
+      "planning",
+      "design",
+      "implementation",
+      "qa",
+      "release_review"
+    ]
+  },
+  "required_evidence": [
+    "role_assignments",
+    "artifact_promotions",
+    "review_records"
+  ],
+  "risk_notes": [
+    "Company metaphors can add ceremony; use only when staged artifacts reduce ambiguity.",
+    "Role separation should not create multiple unsynchronized writers over the same files."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/orgagent_organize_your_multi_agent_system_like_a_company.html",
+    "多agent编排报告_20260421.zip: research/software_company_orchestration_source.md",
+    "多agent编排报告_20260421.zip: site/metagpt_orchestration_and_agent_structure.html",
+    "多agent编排报告_20260421.zip: site/chatdev_orchestration_and_agent_structure.html"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "role-template",
+    "company",
+    "artifact",
+    "qa"
+  ],
+  "version": 1
+}

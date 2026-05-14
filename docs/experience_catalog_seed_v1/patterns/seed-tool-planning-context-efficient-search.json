@@ -1,0 +1,56 @@
+{
+  "anti_signals": [
+    "no tools",
+    "pure reasoning",
+    "small context"
+  ],
+  "applicability_signals": [
+    "tool use",
+    "tool planning",
+    "dfsdt",
+    "context efficient",
+    "工具调用",
+    "工具规划",
+    "长链工具",
+    "搜索"
+  ],
+  "confidence_score": 5.5,
+  "description": "Use context-efficient depth-first tool planning when the task requires many tool calls and only a narrow frontier should stay in context.",
+  "evidence_level": "direct",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-tool-planning-context-efficient-search",
+  "pattern_type": "tool_planning",
+  "recommended_structure": {
+    "context_policy": "keep_active_frontier_and_artifact_refs_not_full_trace",
+    "handoff_policy": "tool_results_become_artifact_refs_for_next_agent",
+    "tool_plan": [
+      "select_tool_frontier",
+      "execute_bounded_step",
+      "summarize_state",
+      "continue_or_backtrack"
+    ]
+  },
+  "required_evidence": [
+    "tool_plan",
+    "tool_result_refs",
+    "state_summary"
+  ],
+  "risk_notes": [
+    "Tool planning needs strict result summarization or context will fill with stale traces.",
+    "Backtracking must not discard accepted artifacts without an explicit rollback event."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/smurfs_multi_agent_system_using_context_efficient_dfsdt_for_tool_planning.html",
+    "多agent编排报告_20260421.zip: site/tool_and_message_routing.html"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "tool-planning",
+    "context",
+    "search",
+    "handoff"
+  ],
+  "version": 1
+}

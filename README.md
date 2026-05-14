@@ -141,10 +141,10 @@ python3 examples/phase_f_codex_director_experience_demo.py
 Export the agent-readable experience catalog:
 
 ```bash
-python3 scripts/export_experience_catalog.py --output phasef_experience_catalog_data/catalog.json
+python3 scripts/export_experience_catalog.py --output-dir phasef_experience_catalog_data/catalog
 ```
 
-The committed seed catalog is also available at `docs/experience_catalog_seed_v1.json` for agents that should read the pattern set without importing Python.
+The committed seed catalog is also available at `docs/experience_catalog_seed_v1/index.json`, with one pattern JSON per file under `docs/experience_catalog_seed_v1/patterns/`, for agents that should read the pattern set without importing Python.
 
 Phase F adds an evolvable `ExperienceLibrary` of agent-readable orchestration patterns. The default catalog includes engineering runtime patterns and paper-derived patterns for proposer/aggregator layers, graph message passing, dynamic topology routing, learned routing gates, hierarchical memory planning, large-scale hierarchy, evolutionary or self-rectifying agent generation, cross-team governance, company-style role lifecycle, topology security controls, verification-aware planning, intervention debugging, context-efficient tool planning, disagreement-based recruitment, and protocol-aware communication.
 

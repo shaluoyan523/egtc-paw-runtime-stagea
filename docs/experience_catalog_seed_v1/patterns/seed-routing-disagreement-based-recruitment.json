@@ -1,0 +1,51 @@
+{
+  "anti_signals": [
+    "一致证据充分",
+    "low uncertainty",
+    "no extra budget"
+  ],
+  "applicability_signals": [
+    "disagreement",
+    "分歧",
+    "争议",
+    "tool recruitment",
+    "招募",
+    "uncertainty",
+    "hidden profile"
+  ],
+  "confidence_score": 5.5,
+  "description": "Recruit additional agents or tools when independent agents disagree in a way that exposes missing evidence or capability gaps.",
+  "evidence_level": "direct",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-routing-disagreement-based-recruitment",
+  "pattern_type": "routing",
+  "recommended_structure": {
+    "recruitment_policy": "add_specialist_or_tool_node_for_missing_capability",
+    "resolution_gate": "aggregator_or_overlooker_compares_new_evidence_before_acceptance",
+    "trigger": "material_disagreement_on_required_output_or_evidence"
+  },
+  "required_evidence": [
+    "disagreement_summary",
+    "recruitment_reason",
+    "resolution_evidence"
+  ],
+  "risk_notes": [
+    "Disagreement alone is not a reason to expand; the Director should identify missing evidence or capability.",
+    "Recruitment should be bounded by budget and compiled into the graph."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/dart_leveraging_multi_agent_disagreement_for_tool_recruitment_in_multimodal_reasoning.html",
+    "多agent编排报告_20260421.zip: site/hiddenbench_assessing_collective_reasoning_in_multi_agent_llms_via_hidden_profile_tasks.html",
+    "多agent编排报告_20260421.zip: site/on_the_uncertainty_of_large_language_model_based_multi_agent_systems.html"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "disagreement",
+    "routing",
+    "recruitment",
+    "uncertainty"
+  ],
+  "version": 1
+}

@@ -23,6 +23,22 @@ def main() -> int:
     for pattern in catalog:
         pattern_type = str(pattern["pattern_type"])
         by_type[pattern_type] = by_type.get(pattern_type, 0) + 1
+    directory_root = runtime_root / "directory_catalog"
+    from scripts.export_experience_catalog import write_directory_catalog
+
+    write_directory_catalog(
+        directory_root,
+        {
+            "schema": "egtc.experience.catalog.v1",
+            "pattern_count": len(catalog),
+            "patterns": catalog,
+        },
+    )
+    index = json.loads((directory_root / "index.json").read_text(encoding="utf-8"))
+    index_paths = [
+        directory_root / str(entry["path"])
+        for entry in index["patterns"]
+    ]
 
     required_ids = {
         "seed-aggregation-layered-proposer-aggregator",
@@ -50,6 +66,12 @@ def main() -> int:
         "seeded_count": len(seeded),
         "catalog_count": len(catalog),
         "pattern_types": by_type,
+        "directory_index_count": index["pattern_count"],
+        "directory_missing_files": [
+            str(path.relative_to(directory_root))
+            for path in index_paths
+            if not path.exists()
+        ],
         "missing_required_ids": missing,
         "sample_agent_pattern": catalog[0] if catalog else None,
     }
@@ -57,6 +79,8 @@ def main() -> int:
     return 0 if (
         len(seeded) >= 22
         and not missing
+        and output["directory_index_count"] == len(catalog)
+        and not output["directory_missing_files"]
         and len(by_type) >= 10
         and all(
             {

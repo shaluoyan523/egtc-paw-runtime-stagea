@@ -1,0 +1,58 @@
+{
+  "anti_signals": [
+    "简单",
+    "single file",
+    "只读总结"
+  ],
+  "applicability_signals": [
+    "复杂",
+    "complex",
+    "swe",
+    "多 worker",
+    "多agent",
+    "测试",
+    "验证",
+    "实现",
+    "修改"
+  ],
+  "confidence_score": 7.0,
+  "description": "Use parallel read-only exploration before a single writer and verification gate for complex engineering work.",
+  "evidence_level": "strong",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-topology-parallel-explore-implement-verify",
+  "pattern_type": "topology",
+  "recommended_structure": {
+    "join_policy": "all_explorers_before_writer",
+    "nodes": [
+      "explore",
+      "implement",
+      "verify"
+    ],
+    "topology": "parallel_explore_then_single_writer_then_verify"
+  },
+  "required_evidence": [
+    "diff",
+    "test",
+    "log",
+    "sandbox_events",
+    "resource_report"
+  ],
+  "risk_notes": [
+    "Parallelism should be read-only before the writer lock.",
+    "Do not create extra workers when the task has no dependency or uncertainty signal."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: research/comparison_matrix_source.md",
+    "多agent编排报告_20260421.zip: site/open_source_router_scheduler_task_graph.html"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "director",
+    "workflow",
+    "parallel",
+    "worker"
+  ],
+  "version": 1
+}

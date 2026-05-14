@@ -1,0 +1,47 @@
+{
+  "anti_signals": [
+    "单步",
+    "linear only"
+  ],
+  "applicability_signals": [
+    "routing",
+    "调度",
+    "任务图",
+    "graph",
+    "依赖",
+    "worker",
+    "specialist"
+  ],
+  "confidence_score": 6.5,
+  "description": "Select routing surfaces by task shape: graph edges for explicit dependencies, message/team routing for deliberation, planner recipient routing for tool-specialized workers.",
+  "evidence_level": "mixed",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-routing-message-or-graph-edge",
+  "pattern_type": "routing",
+  "recommended_structure": {
+    "deliberation_tasks": "message_publication",
+    "dependency_tasks": "graph_edges",
+    "tool_specialized_tasks": "planner_recipient_set"
+  },
+  "required_evidence": [
+    "workflow_skeleton",
+    "edges",
+    "node_roles"
+  ],
+  "risk_notes": [
+    "Routing choice must be compiled against known node ids and DAG rules."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/open_source_router_scheduler_task_graph.html",
+    "多agent编排报告_20260421.zip: research/open_source_control_loops_source.md"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "routing",
+    "scheduler",
+    "graph"
+  ],
+  "version": 1
+}

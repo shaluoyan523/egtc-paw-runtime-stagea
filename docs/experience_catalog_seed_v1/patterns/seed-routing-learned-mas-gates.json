@@ -1,0 +1,61 @@
+{
+  "anti_signals": [
+    "需要完整人工审计",
+    "no training data",
+    "固定角色就足够"
+  ],
+  "applicability_signals": [
+    "masrouter",
+    "agentgate",
+    "latentgate",
+    "router",
+    "gate",
+    "路由器",
+    "低延迟",
+    "专家选择",
+    "specialist selection"
+  ],
+  "confidence_score": 6.5,
+  "description": "Use learned or lightweight gate routing when the main decision is which agent, model, or tool specialist should receive the next task.",
+  "evidence_level": "direct",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-routing-learned-mas-gates",
+  "pattern_type": "routing",
+  "recommended_structure": {
+    "fallback_policy": "use Director deterministic graph edge when routing confidence is low",
+    "router_input": [
+      "task_features",
+      "agent_capability_summary",
+      "recent_outcome_stats"
+    ],
+    "router_output": [
+      "recipient_agent_ids",
+      "routing_confidence",
+      "fallback_route"
+    ]
+  },
+  "required_evidence": [
+    "routing_decision",
+    "confidence_score",
+    "fallback_reason"
+  ],
+  "risk_notes": [
+    "Learned routers should not be allowed to expand authority; they only choose among compiled recipients.",
+    "Low-confidence routing must fall back to Director or compiler-approved graph edges."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/masrouter_learning_to_route_llms_for_multi_agent_systems.html",
+    "多agent编排报告_20260421.zip: site/agentgate_a_lightweight_structured_routing_engine_for_the_internet_of_agents.html",
+    "多agent编排报告_20260421.zip: site/latentgate_low_latency_semantic_routing_via_frozen_backbone_probing_of_small_language_models.html"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "routing",
+    "gate",
+    "specialist",
+    "low-latency"
+  ],
+  "version": 1
+}

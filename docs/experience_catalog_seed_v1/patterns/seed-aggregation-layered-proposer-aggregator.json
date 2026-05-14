@@ -1,0 +1,59 @@
+{
+  "anti_signals": [
+    "single source of truth",
+    "唯一可执行补丁",
+    "低延迟"
+  ],
+  "applicability_signals": [
+    "mixture",
+    "moa",
+    "aggregate",
+    "aggregator",
+    "ensemble",
+    "多模型",
+    "多候选",
+    "综合",
+    "汇总",
+    "评审多个方案"
+  ],
+  "confidence_score": 7.0,
+  "description": "Use layered proposer agents followed by aggregator agents when answer quality benefits from independent proposals and synthesis.",
+  "evidence_level": "direct",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-aggregation-layered-proposer-aggregator",
+  "pattern_type": "aggregation",
+  "recommended_structure": {
+    "agent_count_policy": "derive proposers from hypothesis diversity and aggregators from synthesis risk",
+    "join_policy": "aggregate_all_or_quorum_before_next_layer",
+    "layers": [
+      "proposal_layer",
+      "aggregation_layer",
+      "final_selection"
+    ],
+    "topology": "layered_proposer_aggregator"
+  },
+  "required_evidence": [
+    "candidate_outputs",
+    "aggregation_rationale",
+    "selected_output_ref"
+  ],
+  "risk_notes": [
+    "Aggregation can amplify correlated mistakes when proposers share the same blind spots.",
+    "Use bounded layers when latency or token budget is strict."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/mixture_of_agents_enhances_large_language_model_capabilities.html",
+    "多agent编排报告_20260421.zip: site/tumix_multi_agent_test_time_scaling_with_tool_use_mixture.html"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "aggregation",
+    "ensemble",
+    "proposer",
+    "synthesis",
+    "moa"
+  ],
+  "version": 1
+}

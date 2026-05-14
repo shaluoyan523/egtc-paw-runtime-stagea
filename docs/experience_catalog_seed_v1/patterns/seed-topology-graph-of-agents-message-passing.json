@@ -1,0 +1,55 @@
+{
+  "anti_signals": [
+    "线性即可",
+    "single chain",
+    "无依赖"
+  ],
+  "applicability_signals": [
+    "graph of agents",
+    "message passing",
+    "非线性",
+    "多依赖",
+    "图结构",
+    "协作推理",
+    "intermediate"
+  ],
+  "confidence_score": 7.0,
+  "description": "Represent collaboration as a typed agent graph with message passing when dependencies are non-linear and intermediate reasoning must be recombined.",
+  "evidence_level": "direct",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-topology-graph-of-agents-message-passing",
+  "pattern_type": "topology",
+  "recommended_structure": {
+    "edge_policy": "typed_messages_between_dependency_neighbors",
+    "join_policy": "compile_edges_before_execution",
+    "nodes": [
+      "specialist_agents",
+      "intermediate_aggregation",
+      "final_solver"
+    ],
+    "topology": "graph_message_passing"
+  },
+  "required_evidence": [
+    "workflow_skeleton",
+    "edges",
+    "message_contracts"
+  ],
+  "risk_notes": [
+    "Graph edges must remain acyclic or have bounded iteration semantics.",
+    "Message contracts should prevent hidden state from leaking across unrelated branches."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/graph_of_agents_a_graph_based_framework_for_multi_agent_llm_collaboration.html",
+    "多agent编排报告_20260421.zip: site/topology_matters_measuring_memory_leakage_in_multi_agent_llms.html"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "graph",
+    "topology",
+    "message",
+    "collaboration"
+  ],
+  "version": 1
+}

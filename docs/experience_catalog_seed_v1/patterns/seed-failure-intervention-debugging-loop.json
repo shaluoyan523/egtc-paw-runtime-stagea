@@ -1,0 +1,57 @@
+{
+  "anti_signals": [
+    "无检查点",
+    "不能重跑",
+    "irreproducible"
+  ],
+  "applicability_signals": [
+    "dover",
+    "debugging",
+    "auto debugging",
+    "intervention",
+    "失败分析",
+    "自动调试",
+    "修复循环",
+    "checkpoint"
+  ],
+  "confidence_score": 6.5,
+  "description": "Use intervention-driven debugging when a multi-agent run fails: classify failure, patch the workflow or node prompt, and retry from the last sound checkpoint.",
+  "evidence_level": "direct",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-failure-intervention-debugging-loop",
+  "pattern_type": "failure_policy",
+  "recommended_structure": {
+    "debug_loop": [
+      "failure_classification",
+      "intervention_patch",
+      "checkpoint_fork",
+      "targeted_retry"
+    ],
+    "fork_policy": "reuse_accepted_upstream_state_and_replace_only_failed_branch",
+    "stop_policy": "escalate_after_same_failure_budget"
+  },
+  "required_evidence": [
+    "failure_type",
+    "intervention_patch",
+    "checkpoint_ref",
+    "retry_result"
+  ],
+  "risk_notes": [
+    "Debug interventions should be narrow and evidence-linked.",
+    "Retrying from the failed workspace instead of a sound checkpoint can preserve bad state."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/dover_intervention_driven_auto_debugging_for_llm_multi_agent_systems.html",
+    "多agent编排报告_20260421.zip: site/open_source_failure_escalation_retry_and_fallback.html"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "debugging",
+    "retry",
+    "checkpoint",
+    "overlooker"
+  ],
+  "version": 1
+}

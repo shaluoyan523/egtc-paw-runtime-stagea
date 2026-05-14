@@ -1,0 +1,53 @@
+{
+  "anti_signals": [
+    "无需测试",
+    "no review"
+  ],
+  "applicability_signals": [
+    "review",
+    "overlooker",
+    "校验",
+    "验证",
+    "返工",
+    "失败",
+    "retry",
+    "rework"
+  ],
+  "confidence_score": 8.0,
+  "description": "Treat review and rework as a first-class loop with explicit evidence citation and re-entry target.",
+  "evidence_level": "strong",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-role-overlooker-review-rework",
+  "pattern_type": "review_loop",
+  "recommended_structure": {
+    "gate": "overlooker_acceptance",
+    "reentry": [
+      "retry_same_node",
+      "request_director_replan"
+    ],
+    "review_object": "evidence_bundle"
+  },
+  "required_evidence": [
+    "evidence_ref",
+    "validator_refs",
+    "overlooker_report"
+  ],
+  "risk_notes": [
+    "Review must cite evidence_ref.",
+    "Repeated same-failure retries should demote the pattern or request replan."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/engineering_review_and_rework_loops.html",
+    "多agent编排报告_20260421.zip: site/open_source_failure_escalation_retry_and_fallback.html"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "overlooker",
+    "review",
+    "retry",
+    "validation"
+  ],
+  "version": 1
+}

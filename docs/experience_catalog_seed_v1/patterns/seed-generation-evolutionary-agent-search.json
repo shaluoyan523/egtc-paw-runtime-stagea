@@ -1,0 +1,55 @@
+{
+  "anti_signals": [
+    "无评价指标",
+    "不可重复实验",
+    "生产高风险热路径"
+  ],
+  "applicability_signals": [
+    "evoagent",
+    "evolutionary",
+    "agent generation",
+    "自动生成agent",
+    "角色搜索",
+    "优化编排",
+    "metric"
+  ],
+  "confidence_score": 5.5,
+  "description": "Generate and select agent variants through evolutionary search when the right role composition is unknown and can be evaluated by a metric.",
+  "evidence_level": "direct",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-generation-evolutionary-agent-search",
+  "pattern_type": "agent_generation",
+  "recommended_structure": {
+    "generation_loop": [
+      "propose_agent_variants",
+      "evaluate_variants",
+      "select_or_mutate",
+      "freeze_winner"
+    ],
+    "promotion_gate": "compiler_and_overlooker_acceptance_before_runtime_use",
+    "selection_policy": "metric_improvement_with_budget_limit"
+  },
+  "required_evidence": [
+    "variant_specs",
+    "evaluation_metric",
+    "selection_rationale"
+  ],
+  "risk_notes": [
+    "Generated agents remain draft until promoted by review and compiler validation.",
+    "Evolutionary search needs a clear metric; otherwise it becomes expensive prompt churn."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/evoagent_towards_automatic_multi_agent_generation_via_evolutionary_algorithms.html",
+    "多agent编排报告_20260421.zip: site/comas_co_evolving_multi_agent_systems_via_interaction_rewards.html"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "agent-generation",
+    "evolution",
+    "optimization",
+    "metric"
+  ],
+  "version": 1
+}

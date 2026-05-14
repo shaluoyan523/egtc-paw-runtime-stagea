@@ -1,0 +1,54 @@
+{
+  "anti_signals": [
+    "高度并行",
+    "独立模块很多",
+    "urgent wall clock"
+  ],
+  "applicability_signals": [
+    "scaling time",
+    "lifelong",
+    "memory enabled",
+    "长期任务",
+    "持续学习",
+    "上下文连续",
+    "历史记忆"
+  ],
+  "confidence_score": 6.0,
+  "description": "Prefer richer memory and staged time scaling before adding many agents when the bottleneck is continuity rather than independent parallel work.",
+  "evidence_level": "direct",
+  "failure_count": 0,
+  "last_updated_at": 0.0,
+  "pattern_id": "seed-memory-scale-time-before-team-size",
+  "pattern_type": "memory_planning",
+  "recommended_structure": {
+    "memory_layers": [
+      "run_trace",
+      "accepted_artifacts",
+      "experience_observations"
+    ],
+    "promotion_policy": "only accepted observations update reusable memory",
+    "scaling_choice": "extend_memory_and_iteration_depth_before_team_size"
+  },
+  "required_evidence": [
+    "memory_refs",
+    "iteration_trace",
+    "accepted_observations"
+  ],
+  "risk_notes": [
+    "Adding more agents can hurt if the task mostly needs continuity and accumulated context.",
+    "Memory growth needs pruning and confidence decay to avoid stale plans dominating."
+  ],
+  "source_refs": [
+    "多agent编排报告_20260421.zip: site/scaling_teams_or_scaling_time_memory_enabled_lifelong_learning_in_llm_multi_agent_systems.html",
+    "多agent编排报告_20260421.zip: site/on_the_uncertainty_of_large_language_model_based_multi_agent_systems.html"
+  ],
+  "status": "active",
+  "success_count": 0,
+  "tags": [
+    "memory",
+    "scaling",
+    "lifelong",
+    "context"
+  ],
+  "version": 1
+}
