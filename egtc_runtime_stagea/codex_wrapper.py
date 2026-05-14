@@ -165,7 +165,7 @@ class CodexExecWrapper:
             "--json",
             "--skip-git-repo-check",
             "-C",
-            str(cwd),
+            str(cwd.resolve()),
             "-s",
             codex_sandbox,
             prompt,
