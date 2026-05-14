@@ -56,8 +56,16 @@ def main() -> int:
         "node_roles": {
             node.node_id: node.role for node in blueprint.workflow_skeleton.nodes
         },
+        "node_selection_principles": {
+            node.node_id: node.node_selection_principles
+            for node in blueprint.workflow_skeleton.nodes
+        },
         "instantiation_executor_kinds": {
             inst.skeleton_node_id: inst.node.executor_kind
+            for inst in blueprint.node_instantiations
+        },
+        "instantiation_principles": {
+            inst.node.node_id: inst.instantiation_principles
             for inst in blueprint.node_instantiations
         },
         "workspace": str(workspace),
@@ -98,6 +106,8 @@ def main() -> int:
         for agent in allocation.get("agents", [])
         if isinstance(agent, dict)
     ]
+    node_principles = list(output["node_selection_principles"].values())
+    instantiation_principles = list(output["instantiation_principles"].values())
     return 0 if (
         compiled.accepted
         and output["director_mode"] == "codex"
@@ -122,6 +132,19 @@ def main() -> int:
         and all(has_basis(item) for item in output["research_route_decisions"])
         and all(has_basis(item) for item in output["per_stage_agent_allocation"])
         and all(has_basis(item) for item in allocation_agents)
+        and len(node_principles) == output["node_count"]
+        and all(has_basis(item) for item in node_principles)
+        and all(item.get("selected_for") for item in node_principles if isinstance(item, dict))
+        and all(item.get("role_principle") for item in node_principles if isinstance(item, dict))
+        and all(item.get("dependency_principle") for item in node_principles if isinstance(item, dict))
+        and all(item.get("parallelism_principle") for item in node_principles if isinstance(item, dict))
+        and all(item.get("evidence_principle") for item in node_principles if isinstance(item, dict))
+        and len(instantiation_principles) == output["node_count"]
+        and all(has_basis(item) for item in instantiation_principles)
+        and all(item.get("executor_principle") for item in instantiation_principles if isinstance(item, dict))
+        and all(item.get("prompt_principle") for item in instantiation_principles if isinstance(item, dict))
+        and all(item.get("permission_principle") for item in instantiation_principles if isinstance(item, dict))
+        and all(item.get("handoff_principle") for item in instantiation_principles if isinstance(item, dict))
         and output["scaling_policy"].get("scale_triggers")
         and output["scaling_policy"].get("expansion_strategy")
         and len(output["experience_rationale"]) >= 2

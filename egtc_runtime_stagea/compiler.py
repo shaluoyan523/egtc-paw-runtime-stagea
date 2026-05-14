@@ -251,6 +251,7 @@ class WorkflowCompiler:
             )
         findings.extend(self._check_director_skill_usage(blueprint))
         findings.extend(self._check_director_planning_skill(skeleton))
+        findings.extend(self._check_node_selection_principles(blueprint))
         return findings
 
     def _check_director_skill_usage(self, blueprint: WorkflowBlueprint) -> list[CompilerFinding]:
@@ -304,6 +305,8 @@ class WorkflowCompiler:
             "research_route_decisions",
             "per_stage_agent_allocation",
             "plan_derivation_trace",
+            "node_selection_principles",
+            "instantiation_principles",
             "decision_basis",
         }
         applied = usage.get("applied_required_fields")
@@ -526,10 +529,152 @@ class WorkflowCompiler:
             )
         return findings
 
+    def _check_node_selection_principles(
+        self,
+        blueprint: WorkflowBlueprint,
+    ) -> list[CompilerFinding]:
+        findings: list[CompilerFinding] = []
+        skeleton_nodes = {
+            node.node_id: node
+            for node in blueprint.workflow_skeleton.nodes
+        }
+        required_node_keys = {
+            "stage_id",
+            "selected_for",
+            "role_principle",
+            "dependency_principle",
+            "parallelism_principle",
+            "evidence_principle",
+            "decision_basis",
+        }
+        for node in blueprint.workflow_skeleton.nodes:
+            principles = node.node_selection_principles
+            if not principles:
+                findings.append(
+                    CompilerFinding(
+                        "error",
+                        "director_node_missing_selection_principles",
+                        "Every final skeleton node must explain why it was selected.",
+                        node.node_id,
+                    )
+                )
+                continue
+            missing = sorted(required_node_keys - set(principles))
+            if missing:
+                findings.append(
+                    CompilerFinding(
+                        "error",
+                        "director_node_selection_principles_missing_keys",
+                        f"node_selection_principles is missing keys: {missing}",
+                        node.node_id,
+                    )
+                )
+            for key in [
+                "role_principle",
+                "dependency_principle",
+                "parallelism_principle",
+                "evidence_principle",
+            ]:
+                if not isinstance(principles.get(key), str) or not principles.get(key, "").strip():
+                    findings.append(
+                        CompilerFinding(
+                            "error",
+                            "director_node_selection_principle_empty",
+                            f"node_selection_principles.{key} must be non-empty.",
+                            node.node_id,
+                        )
+                    )
+            selected_for = principles.get("selected_for")
+            if not isinstance(selected_for, list) or not selected_for:
+                findings.append(
+                    CompilerFinding(
+                        "error",
+                        "director_node_selection_missing_reason",
+                        "node_selection_principles.selected_for must explain why this node exists.",
+                        node.node_id,
+                    )
+                )
+            findings.extend(
+                self._check_decision_basis(
+                    principles,
+                    f"workflow_skeleton.nodes[{node.node_id}].node_selection_principles",
+                    node.node_id,
+                )
+            )
+
+        required_instantiation_keys = {
+            "stage_id",
+            "skeleton_node_id",
+            "executor_principle",
+            "prompt_principle",
+            "permission_principle",
+            "evidence_principle",
+            "handoff_principle",
+            "decision_basis",
+        }
+        for inst in blueprint.node_instantiations:
+            principles = inst.instantiation_principles
+            if inst.skeleton_node_id not in skeleton_nodes:
+                continue
+            if not principles:
+                findings.append(
+                    CompilerFinding(
+                        "error",
+                        "director_node_missing_instantiation_principles",
+                        "Every node instantiation must explain why this execution form was selected.",
+                        inst.node.node_id,
+                    )
+                )
+                continue
+            missing = sorted(required_instantiation_keys - set(principles))
+            if missing:
+                findings.append(
+                    CompilerFinding(
+                        "error",
+                        "director_node_instantiation_principles_missing_keys",
+                        f"instantiation_principles is missing keys: {missing}",
+                        inst.node.node_id,
+                    )
+                )
+            for key in [
+                "executor_principle",
+                "prompt_principle",
+                "permission_principle",
+                "evidence_principle",
+                "handoff_principle",
+            ]:
+                if not isinstance(principles.get(key), str) or not principles.get(key, "").strip():
+                    findings.append(
+                        CompilerFinding(
+                            "error",
+                            "director_node_instantiation_principle_empty",
+                            f"instantiation_principles.{key} must be non-empty.",
+                            inst.node.node_id,
+                        )
+                    )
+            if principles.get("skeleton_node_id") != inst.skeleton_node_id:
+                findings.append(
+                    CompilerFinding(
+                        "error",
+                        "director_node_instantiation_principle_mismatch",
+                        "instantiation_principles.skeleton_node_id must match the instantiated skeleton node.",
+                        inst.node.node_id,
+                    )
+                )
+            findings.extend(
+                self._check_decision_basis(
+                    principles,
+                    f"node_instantiations[{inst.node.node_id}].instantiation_principles",
+                    inst.node.node_id,
+                )
+            )
+        return findings
+
     def _check_decision_basis(
         self,
         record: dict[str, object],
         location: str,
+        node_id: str | None = None,
     ) -> list[CompilerFinding]:
         basis = record.get("decision_basis")
         if not isinstance(basis, dict):
@@ -538,6 +683,7 @@ class WorkflowCompiler:
                     "error",
                     "director_missing_decision_basis",
                     f"{location} must include decision_basis for dynamic replanning.",
+                    node_id,
                 )
             ]
         findings: list[CompilerFinding] = []

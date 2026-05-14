@@ -183,3 +183,103 @@ List of concise trace strings:
 ```
 
 The trace must connect the linear stages to final node ids.
+
+## workflow_skeleton.nodes node_selection_principles
+
+Every final skeleton node must include `node_selection_principles`:
+
+```json
+{
+  "node_id": "explore-context",
+  "phase": "exploration",
+  "role": "explorer",
+  "goal": "Map implementation touchpoints.",
+  "depends_on": [],
+  "expected_outputs": ["touchpoint_map"],
+  "experience_pattern_ids": ["seed-topology-parallel-explore-implement-verify"],
+  "node_selection_principles": {
+    "stage_id": "stage-1",
+    "selected_for": [
+      "This node isolates read-only source discovery before any writer runs."
+    ],
+    "role_principle": "Explorer is selected because the node must inspect and report without editing.",
+    "dependency_principle": "No predecessors are required because this is an initial discovery node.",
+    "parallelism_principle": "It can run in parallel with validation exploration because both are read-only and have disjoint output ownership.",
+    "evidence_principle": "touchpoint_map is sufficient for the writer to choose bounded files.",
+    "experience_pattern_ids": ["seed-topology-parallel-explore-implement-verify"],
+    "decision_basis": {
+      "basis_id": "basis-node-explore-context",
+      "source_refs": [
+        "per_stage_agent_allocation[stage-1]",
+        "experience:seed-topology-parallel-explore-implement-verify"
+      ],
+      "matched_signals": ["unknown implementation surface", "parallelizable read-only discovery"],
+      "assumptions": ["Source and validation discovery can be separated cleanly."],
+      "invalidation_signals": ["The repo has only one trivial touchpoint.", "The node duplicates another explorer's scope."],
+      "confidence": "medium",
+      "correction_target": "workflow_skeleton.nodes[explore-context]",
+      "correction_action": "Merge, remove, split, reorder, or change this node role."
+    }
+  }
+}
+```
+
+Rules:
+
+- `selected_for` must explain why the node exists in the final graph.
+- `role_principle` must justify the role instead of only naming it.
+- `dependency_principle` must justify `depends_on`, including empty dependencies.
+- `parallelism_principle` must explain whether the node is parallel, serial, a fan-in, or a gate.
+- `evidence_principle` must explain why `expected_outputs` are enough for downstream use.
+
+## node_instantiations instantiation_principles
+
+Every node instantiation must include `instantiation_principles`:
+
+```json
+{
+  "skeleton_node_id": "explore-context",
+  "node_id": "phasef-explore-context",
+  "phase": "exploration",
+  "executor_kind": "codex_cli",
+  "prompt": "Worker instruction...",
+  "required_evidence": ["analysis_log", "touchpoint_map"],
+  "acceptance_criteria": ["Submit only read-only findings."],
+  "experience_pattern_ids": ["seed-topology-parallel-explore-implement-verify"],
+  "instantiation_principles": {
+    "stage_id": "stage-1",
+    "skeleton_node_id": "explore-context",
+    "executor_principle": "codex_cli is selected because this node must be performed by an agent that can inspect repo context.",
+    "prompt_principle": "The prompt confines ownership to source touchpoint discovery and forbids writes.",
+    "permission_principle": "Read-only repo access is enough; no write or network permission is grounded.",
+    "evidence_principle": "analysis_log and touchpoint_map are the artifacts needed by the writer and overlooker.",
+    "handoff_principle": "The writer consumes touchpoint_map after all exploration nodes complete.",
+    "decision_basis": {
+      "basis_id": "basis-instantiation-explore-context",
+      "source_refs": ["workflow_skeleton.nodes[explore-context]", "repo_policy.allowed_read_paths"],
+      "matched_signals": ["read-only agent work", "artifact handoff required"],
+      "assumptions": ["The repo can be inspected locally without network."],
+      "invalidation_signals": ["The node requires unavailable tools.", "The prompt scope overlaps another node."],
+      "confidence": "medium",
+      "correction_target": "node_instantiations[phasef-explore-context]",
+      "correction_action": "Change executor, prompt, evidence contract, handoff, or permission grounding."
+    }
+  },
+  "permission_grounding": {
+    "network": "none",
+    "allowed_read_paths": ["."],
+    "allowed_write_paths": [],
+    "allowed_commands": [],
+    "grounded_by": ["repo_policy.allowed_read_paths"],
+    "justification": "Read-only exploration."
+  }
+}
+```
+
+Rules:
+
+- `executor_principle` must justify why the node is an agent, subprocess, verifier, overlooker, or other executor.
+- `prompt_principle` must justify scope, ownership boundary, and non-overlap with peer nodes.
+- `permission_principle` must connect permissions to repo policy and the node goal.
+- `evidence_principle` must justify `required_evidence` and acceptance criteria.
+- `handoff_principle` must name how downstream nodes consume the output or how final acceptance uses it.

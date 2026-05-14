@@ -40,6 +40,7 @@ class WorkflowSkeletonNode:
     depends_on: list[str] = field(default_factory=list)
     expected_outputs: list[str] = field(default_factory=list)
     experience_pattern_ids: list[str] = field(default_factory=list)
+    node_selection_principles: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -88,6 +89,7 @@ class NodeInstantiation:
     node: NodeCapsule
     skeleton_node_id: str
     permission_grounding: PermissionGroundingReport
+    instantiation_principles: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

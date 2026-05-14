@@ -113,6 +113,13 @@ class DirectorAgentV1:
                 goal="Inspect task context and identify implementation surface.",
                 expected_outputs=["analysis_log"],
                 experience_pattern_ids=matched_pattern_ids,
+                node_selection_principles=self._default_node_selection_principles(
+                    stage_id="diagnosis",
+                    node_id="diagnose",
+                    role="worker",
+                    reason="A read-only diagnosis node is needed before writes when the implementation surface is not yet grounded.",
+                    source_refs=["objective", "repo_policy"],
+                ),
             )
         ]
         edges: list[tuple[str, str]] = []
@@ -126,6 +133,13 @@ class DirectorAgentV1:
                     depends_on=["diagnose"],
                     expected_outputs=["diff", "worker_log"],
                     experience_pattern_ids=matched_pattern_ids,
+                    node_selection_principles=self._default_node_selection_principles(
+                        stage_id="implementation",
+                        node_id="implement",
+                        role="worker",
+                        reason="A bounded worker node is needed because the diagnosis requires a code change.",
+                        source_refs=["task_diagnosis.requires_code_change"],
+                    ),
                 )
             )
             edges.append(("diagnose", "implement"))
@@ -139,6 +153,13 @@ class DirectorAgentV1:
                     depends_on=["implement"] if diagnosis.requires_code_change else ["diagnose"],
                     expected_outputs=["test_report", "validator_ready_evidence"],
                     experience_pattern_ids=review_pattern_ids or matched_pattern_ids,
+                    node_selection_principles=self._default_node_selection_principles(
+                        stage_id="verification",
+                        node_id="verify",
+                        role="worker",
+                        reason="A read-only verification node is needed because the task requires test evidence.",
+                        source_refs=["task_diagnosis.requires_tests", "repo_policy.test_commands"],
+                    ),
                 )
             )
             edges.append(("implement" if diagnosis.requires_code_change else "diagnose", "verify"))
@@ -184,6 +205,11 @@ class DirectorAgentV1:
                     node=node,
                     skeleton_node_id=skeleton_node.node_id,
                     permission_grounding=grounding,
+                    instantiation_principles=self._default_instantiation_principles(
+                        skeleton_node=skeleton_node,
+                        node=node,
+                        grounding=grounding,
+                    ),
                 )
             )
         return instantiations
@@ -356,6 +382,8 @@ Output strict JSON:
       "research_route_decisions",
       "per_stage_agent_allocation",
       "plan_derivation_trace",
+      "node_selection_principles",
+      "instantiation_principles",
       "decision_basis"
     ]
   },
@@ -524,7 +552,26 @@ Output strict JSON:
         "goal": "...",
         "depends_on": [],
         "expected_outputs": ["analysis_log"],
-        "experience_pattern_ids": ["..."]
+        "experience_pattern_ids": ["..."],
+        "node_selection_principles": {
+          "stage_id": "stage-1",
+          "selected_for": ["why this node exists in the final graph"],
+          "role_principle": "why this role is assigned instead of another role",
+          "dependency_principle": "why depends_on is empty or names its predecessors",
+          "parallelism_principle": "why this node is parallel, serial, or a join point",
+          "evidence_principle": "why the expected_outputs are sufficient",
+          "experience_pattern_ids": ["..."],
+          "decision_basis": {
+            "basis_id": "basis-node-explore-context",
+            "source_refs": ["per_stage_agent_allocation[stage-1]", "experience:pattern-id"],
+            "matched_signals": ["why this final node is needed"],
+            "assumptions": ["what must be true for this node to remain useful"],
+            "invalidation_signals": ["what would make this node redundant, too broad, or wrongly ordered"],
+            "confidence": "low | medium | high",
+            "correction_target": "workflow_skeleton.nodes[explore-context]",
+            "correction_action": "remove, merge, split, reorder, or change the node role"
+          }
+        }
       }
     ],
     "edges": [["explore-context", "implement"]]
@@ -541,6 +588,25 @@ Output strict JSON:
       "required_evidence": ["diff", "test", "log"],
       "acceptance_criteria": ["Worker may only submit results.", "Overlooker acceptance must cite evidence_ref."],
       "experience_pattern_ids": ["..."],
+      "instantiation_principles": {
+        "stage_id": "stage-1",
+        "skeleton_node_id": "explore-context",
+        "executor_principle": "why this must be a codex_cli agent, subprocess, or other executor",
+        "prompt_principle": "why the prompt scope and ownership boundary are sufficient",
+        "permission_principle": "why read/write/network permissions are minimal and grounded",
+        "evidence_principle": "why required_evidence and acceptance_criteria fit this node",
+        "handoff_principle": "how this node's output is consumed by downstream nodes",
+        "decision_basis": {
+          "basis_id": "basis-instantiation-explore-context",
+          "source_refs": ["workflow_skeleton.nodes[explore-context]", "repo_policy"],
+          "matched_signals": ["why this execution form is needed"],
+          "assumptions": ["what must be true for this executor and permission profile"],
+          "invalidation_signals": ["what would require changing executor, permissions, evidence, or prompt"],
+          "confidence": "low | medium | high",
+          "correction_target": "node_instantiations[phasef-explore-context]",
+          "correction_action": "change executor, prompt, evidence contract, or permission grounding"
+        }
+      },
       "permission_grounding": {
         "network": "none",
         "allowed_read_paths": ["."],
@@ -564,6 +630,8 @@ Rules:
 - Pick the smallest plan that has enough coverage, but explicitly describe when it should be expanded.
 - Every final node must be traceable to a linear_requirement_flow stage through per_stage_agent_allocation and plan_derivation_trace.
 - Every planning record must include decision_basis with source_refs, matched_signals, assumptions, invalidation_signals, confidence, correction_target, and correction_action.
+- Every workflow_skeleton.nodes item must include node_selection_principles explaining why this node, role, dependency position, expected outputs, and parallel/serial placement were selected.
+- Every node_instantiations item must include instantiation_principles explaining why this executor, prompt scope, evidence contract, handoff, and permission grounding were selected.
 - The sum of per_stage_agent_allocation.agent_count values must equal agent_allocation.total_agents and the final skeleton node count.
 - Each stage_structure_decisions item must include anti_signals.
 - Each stage must have a research_route_decisions item. If external research would help but network is none, mark external_web as blocked and plan local research only.
@@ -638,6 +706,11 @@ Rules:
                     experience_pattern_ids=self._filter_known_patterns(
                         raw.get("experience_pattern_ids", selected_pattern_ids),
                         selected_pattern_ids,
+                    ),
+                    node_selection_principles=(
+                        raw.get("node_selection_principles")
+                        if isinstance(raw.get("node_selection_principles"), dict)
+                        else {}
                     ),
                 )
             )
@@ -740,6 +813,11 @@ Rules:
                     node=node,
                     skeleton_node_id=skeleton_node_id,
                     permission_grounding=grounding,
+                    instantiation_principles=(
+                        raw.get("instantiation_principles")
+                        if isinstance(raw.get("instantiation_principles"), dict)
+                        else {}
+                    ),
                 )
             )
         if not instantiations:
@@ -858,6 +936,80 @@ Rules:
             return ""
         return hashlib.sha256(path.read_bytes()).hexdigest()
 
+    def _default_node_selection_principles(
+        self,
+        *,
+        stage_id: str,
+        node_id: str,
+        role: str,
+        reason: str,
+        source_refs: list[str],
+    ) -> dict[str, Any]:
+        return {
+            "stage_id": stage_id,
+            "selected_for": [reason],
+            "role_principle": f"{role} is the smallest role that satisfies this node goal.",
+            "dependency_principle": "Dependencies follow the staged handoff needed before this node can run.",
+            "parallelism_principle": "Parallel or serial placement follows dependency and write-ownership constraints.",
+            "evidence_principle": "Expected outputs are the evidence needed by downstream nodes or review.",
+            "experience_pattern_ids": [
+                ref.removeprefix("experience:")
+                for ref in source_refs
+                if ref.startswith("experience:")
+            ],
+            "decision_basis": {
+                "basis_id": f"basis-node-{node_id}",
+                "source_refs": source_refs,
+                "matched_signals": [reason],
+                "assumptions": ["This node remains necessary for the selected workflow structure."],
+                "invalidation_signals": [
+                    "The node duplicates another node's ownership boundary.",
+                    "The node cannot produce evidence consumed by downstream stages.",
+                ],
+                "confidence": "medium",
+                "correction_target": f"workflow_skeleton.nodes[{node_id}]",
+                "correction_action": "Remove, merge, split, reorder, or change this node role during replanning.",
+            },
+        }
+
+    def _default_instantiation_principles(
+        self,
+        *,
+        skeleton_node: WorkflowSkeletonNode,
+        node: NodeCapsule,
+        grounding: PermissionGroundingReport,
+    ) -> dict[str, Any]:
+        return {
+            "stage_id": skeleton_node.node_selection_principles.get("stage_id", skeleton_node.phase),
+            "skeleton_node_id": skeleton_node.node_id,
+            "executor_principle": f"{node.executor_kind} is selected for the node execution surface.",
+            "prompt_principle": "Prompt scope follows the skeleton node goal and ownership boundary.",
+            "permission_principle": grounding.sandbox_profile.justification,
+            "evidence_principle": "Required evidence and acceptance criteria match downstream review needs.",
+            "handoff_principle": "Outputs are handed to declared dependent nodes or final review.",
+            "decision_basis": {
+                "basis_id": f"basis-instantiation-{node.node_id}",
+                "source_refs": [
+                    f"workflow_skeleton.nodes[{skeleton_node.node_id}]",
+                    "repo_policy",
+                    "permission_grounding",
+                ],
+                "matched_signals": [
+                    f"{skeleton_node.role} node requires executable task capsule.",
+                ],
+                "assumptions": [
+                    "The selected executor and permission profile can produce the required evidence.",
+                ],
+                "invalidation_signals": [
+                    "The node needs permissions not grounded by repo policy.",
+                    "The executor cannot produce the required evidence.",
+                ],
+                "confidence": "medium",
+                "correction_target": f"node_instantiations[{node.node_id}]",
+                "correction_action": "Change executor, prompt, evidence contract, or permission grounding.",
+            },
+        }
+
     def _active_director_pattern_ids(
         self,
         output: dict[str, Any],
@@ -905,6 +1057,13 @@ Rules:
                 goal="Inspect the repository surface and summarize likely implementation touchpoints.",
                 expected_outputs=["analysis_log", "touchpoint_map"],
                 experience_pattern_ids=explorer_patterns,
+                node_selection_principles=self._default_node_selection_principles(
+                    stage_id="stage-1",
+                    node_id="explore-context",
+                    role="explorer",
+                    reason="A source explorer separates read-only touchpoint discovery from later writes.",
+                    source_refs=["experience:seed-topology-parallel-explore-implement-verify"],
+                ),
             ),
             WorkflowSkeletonNode(
                 node_id="explore-tests",
@@ -913,6 +1072,13 @@ Rules:
                 goal="Inspect available tests and validation commands without writing files.",
                 expected_outputs=["test_plan", "risk_notes"],
                 experience_pattern_ids=explorer_patterns,
+                node_selection_principles=self._default_node_selection_principles(
+                    stage_id="stage-1",
+                    node_id="explore-tests",
+                    role="explorer",
+                    reason="A validation explorer independently maps test and risk evidence before implementation.",
+                    source_refs=["repo_policy.test_commands", "experience:seed-review-verification-aware-planning"],
+                ),
             ),
             WorkflowSkeletonNode(
                 node_id="implement",
@@ -922,6 +1088,13 @@ Rules:
                 depends_on=["explore-context", "explore-tests"],
                 expected_outputs=["diff", "worker_log"],
                 experience_pattern_ids=writer_patterns,
+                node_selection_principles=self._default_node_selection_principles(
+                    stage_id="stage-2",
+                    node_id="implement",
+                    role="worker",
+                    reason="A single writer serializes writes after parallel exploration to avoid conflicting ownership.",
+                    source_refs=["experience:seed-handoff-artifact-chain"],
+                ),
             ),
             WorkflowSkeletonNode(
                 node_id="verify",
@@ -931,6 +1104,13 @@ Rules:
                 depends_on=["implement"],
                 expected_outputs=["test_report", "validator_ready_evidence"],
                 experience_pattern_ids=verifier_patterns,
+                node_selection_principles=self._default_node_selection_principles(
+                    stage_id="stage-3",
+                    node_id="verify",
+                    role="worker",
+                    reason="A verification node turns the worker handoff into validator-ready evidence.",
+                    source_refs=["repo_policy.test_commands", "experience:seed-review-verification-aware-planning"],
+                ),
             ),
         ]
         return WorkflowSkeleton(

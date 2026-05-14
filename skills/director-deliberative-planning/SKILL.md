@@ -40,6 +40,8 @@ Use this skill before emitting a workflow plan. The Director must first build pl
 
 6. Emit the final workflow only after the above steps.
    - The final `workflow_skeleton.nodes` and `node_instantiations` must be traceable to the per-stage decisions.
+   - Every final skeleton node must include `node_selection_principles`, explaining why that node exists, why that role was chosen, why its dependency position is correct, why it is parallel/serial/joined, and why its expected outputs are sufficient.
+   - Every node instantiation must include `instantiation_principles`, explaining why the executor, prompt scope, evidence contract, handoff, and permission grounding were selected.
    - `plan_derivation_trace` must cite the decision basis ids used to derive each final node.
    - Verification and overlooker stages must be read-only unless the repo policy explicitly grounds writes.
    - Experience patterns may shape structure but must not request network, permissions, sandbox changes, secrets, or sensitive writes.
@@ -54,7 +56,9 @@ Add these fields under `workflow_skeleton` in addition to the runtime-required f
 - `per_stage_agent_allocation`: agent counts and role assignments per stage.
 - `plan_derivation_trace`: concise trace connecting stage decisions to final nodes.
 
-Every record in those fields must include `decision_basis`. The basis must name evidence or source refs, matched signals, assumptions, invalidation signals, and the workflow field or node that should be patched if the basis is later disproven.
+Each `workflow_skeleton.nodes[*]` record must include `node_selection_principles`. Each `node_instantiations[*]` record must include `instantiation_principles`.
+
+Every planning record and every node principle record must include `decision_basis`. The basis must name evidence or source refs, matched signals, assumptions, invalidation signals, and the workflow field or node that should be patched if the basis is later disproven.
 
 See `references/planning_schema.md` for exact field shapes.
 
@@ -67,6 +71,9 @@ Reject your own plan and revise before output if:
 - A chosen structure has no anti-signals.
 - A specialized task has no research decision.
 - Any stage, structure decision, research decision, allocation, or final-node derivation lacks `decision_basis`.
+- Any final skeleton node lacks `node_selection_principles`.
+- Any node instantiation lacks `instantiation_principles`.
+- A node exists without a clear role, dependency, parallelism, evidence, and correction principle.
 - A `decision_basis` has no correction target for future replanning.
 - The selected plan is just the first plan considered.
 - The plan scales by adding agents without ownership boundaries.

@@ -165,6 +165,8 @@ def main() -> int:
     expected = {
         "director_missing_skill_usage",
         "director_missing_decision_basis",
+        "director_node_missing_selection_principles",
+        "director_node_missing_instantiation_principles",
     }
     return 0 if not compiled.accepted and expected.issubset(finding_codes) else 1
 
