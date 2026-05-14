@@ -135,6 +135,7 @@ Run the Phase F experience-library demos:
 python3 examples/phase_f_experience_catalog_demo.py
 python3 examples/phase_f_experience_library_demo.py
 python3 examples/phase_f_experience_compiler_negative_demo.py
+python3 examples/phase_f_director_planning_skill_negative_demo.py
 python3 examples/phase_f_codex_director_experience_demo.py
 ```
 
@@ -147,6 +148,15 @@ python3 scripts/export_experience_catalog.py --output-dir phasef_experience_cata
 The committed seed catalog is also available at `docs/experience_catalog_seed_v1/index.json`, with one pattern JSON per file under `docs/experience_catalog_seed_v1/patterns/`, for agents that should read the pattern set without importing Python.
 
 Phase F adds an evolvable `ExperienceLibrary` of agent-readable orchestration patterns. The default catalog includes engineering runtime patterns and paper-derived patterns for proposer/aggregator layers, graph message passing, dynamic topology routing, learned routing gates, hierarchical memory planning, large-scale hierarchy, evolutionary or self-rectifying agent generation, cross-team governance, company-style role lifecycle, topology security controls, verification-aware planning, intervention debugging, context-efficient tool planning, disagreement-based recruitment, and protocol-aware communication.
+
+Director deliberation skill:
+
+```text
+skills/director-deliberative-planning/SKILL.md
+skills/director-deliberative-planning/references/planning_schema.md
+```
+
+The Codex Director receives this skill in `director_input.json` and must produce a linear requirement flow, per-stage structure decisions, research-route decisions, per-stage agent allocation, and a plan derivation trace before emitting final workflow nodes.
 
 Phase B adds:
 
@@ -184,8 +194,10 @@ Phase F adds:
 - `ExperienceLibrary`: JSONL-backed seed, retrieve, observe, update-proposal, and catalog-export operations.
 - Agent-readable default orchestration patterns distilled from `多agent编排报告_20260421.zip`.
 - Director experience selection with pattern ids propagated into `TaskDiagnosis`, `WorkflowSkeleton`, and `NodeCapsule`.
+- `director-deliberative-planning` skill for staged Director planning before workflow emission.
 - Codex Director experience planning that compares alternatives, chooses agent allocation, and emits scaling policy before compiler validation.
 - Compiler checks that experience patterns can shape workflow structure but cannot request permissions, sandbox changes, network, or secrets.
+- Compiler checks that Codex Director plans include linear requirement flow, stage structure decisions, research-route decisions, per-stage agent allocation, and node derivation trace.
 
 Deferred beyond Phase F:
 

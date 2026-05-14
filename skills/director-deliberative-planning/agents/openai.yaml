@@ -1,0 +1,4 @@
+interface:
+  display_name: "Director Deliberative Planning"
+  short_description: "Stage-aware Director workflow planning"
+  default_prompt: "Use $director-deliberative-planning to decompose a complex task into stages, choose structures and agents, and derive a final workflow."

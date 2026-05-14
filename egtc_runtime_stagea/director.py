@@ -215,9 +215,11 @@ class DirectorAgentV1:
             raise ValueError("plan_with_codex_director requires an ExperienceLibrary")
         workspace.mkdir(parents=True, exist_ok=True)
         seed_matches = self.experience_library.retrieve(objective, limit=16)
+        skill_packet = self._director_deliberative_planning_skill()
         input_packet = {
             "objective": objective,
             "repo_policy": to_plain_dict(repo_policy),
+            "director_skill": skill_packet,
             "experience_candidates": [
                 {
                     "pattern_id": match.pattern.pattern_id,
@@ -237,6 +239,10 @@ class DirectorAgentV1:
             "director_rules": [
                 "Director must choose how many agents/nodes are needed.",
                 "Director must compare multiple candidate workflow skeletons before selecting one.",
+                "Director must apply director_input.director_skill before emitting the final workflow.",
+                "Director must first decompose the task into a linear requirement flow.",
+                "Director must choose the structure and agent allocation for each linear stage before creating final nodes.",
+                "Director must decide whether each specialized or uncertain stage needs research, and must mark blocked external research when network is unavailable.",
                 "Director must define a scaling policy for tasks that exceed the current corpus.",
                 "Director must cite selected experience pattern ids.",
                 "Director must not request network or sandbox/permission expansion.",
@@ -311,7 +317,14 @@ You are the EGTC-PAW Phase F Director Agent.
 
 Read ./director_input.json and create ./director_output.json.
 
+You must apply director_input.director_skill. First produce deliberative planning
+artifacts, then derive the final workflow. Do not jump directly from objective to
+final nodes.
+
 You must choose and apply experience-library patterns yourself. This includes:
+- decomposing the objective into a linear requirement flow,
+- selecting a structure for each linear stage,
+- deciding whether local or external research is needed for each specialized stage,
 - selecting which experience pattern ids to use,
 - choosing topology,
 - choosing how many worker agents/nodes to instantiate,
@@ -370,6 +383,63 @@ Output strict JSON:
       "compare evidence and task signals, then explain a planning judgment",
       "explain why selected topology is better than alternatives"
     ],
+    "linear_requirement_flow": [
+      {
+        "stage_id": "stage-1",
+        "order": 1,
+        "name": "linear stage name",
+        "purpose": "why this stage exists",
+        "inputs": ["objective"],
+        "outputs": ["stage artifact"],
+        "risk_level": "low | medium | high",
+        "acceptance_evidence": ["evidence_ref"]
+      }
+    ],
+    "stage_structure_decisions": [
+      {
+        "stage_id": "stage-1",
+        "candidate_structures": [
+          {"structure": "single_agent", "fit": "low | medium | high", "reason": "..."}
+        ],
+        "selected_structure": "single_agent | parallel_exploration | specialist_pool | proposer_aggregator | graph_message_passing | dynamic_routing | hierarchical_subteams | review_gate | tool_planning | research_route",
+        "selection_reason": "why this structure fits this stage",
+        "anti_signals": ["what would make this structure wrong"],
+        "experience_pattern_ids": ["..."]
+      }
+    ],
+    "research_route_decisions": [
+      {
+        "stage_id": "stage-1",
+        "research_needed": false,
+        "reason": "why research is or is not needed",
+        "available_sources": ["experience_candidates", "repo_files"],
+        "blocked_sources": ["external_web"],
+        "planned_queries_or_searches": ["local search or query plan"],
+        "adopted_expert_route": "route selected from experience or local evidence",
+        "fallback_if_research_blocked": "fallback plan"
+      }
+    ],
+    "per_stage_agent_allocation": [
+      {
+        "stage_id": "stage-1",
+        "agent_count": 1,
+        "count_reason": "why this many agents are needed for this stage",
+        "agents": [
+          {
+            "role": "explorer",
+            "task": "agent task",
+            "inputs": ["stage input"],
+            "outputs": ["stage output"],
+            "ownership_boundary": "what this agent owns",
+            "write_authority": "none | bounded write path",
+            "handoff_target": "next stage or node"
+          }
+        ]
+      }
+    ],
+    "plan_derivation_trace": [
+      "stage-1 selected parallel_exploration, producing final nodes explore-a and explore-b"
+    ],
     "experience_pattern_ids": ["..."],
     "experience_rationale": ["..."],
     "nodes": [
@@ -415,6 +485,10 @@ Rules:
 - The current task may need 1 agent, 4 agents, dozens of agents, or a staged plan that can grow toward hundreds. If the full scale is not needed now, explain the scale triggers.
 - Compare at least three candidate skeletons, including a small conservative plan, a medium plan, and a larger scalable plan.
 - Pick the smallest plan that has enough coverage, but explicitly describe when it should be expanded.
+- Every final node must be traceable to a linear_requirement_flow stage through per_stage_agent_allocation and plan_derivation_trace.
+- The sum of per_stage_agent_allocation.agent_count values must equal agent_allocation.total_agents and the final skeleton node count.
+- Each stage_structure_decisions item must include anti_signals.
+- Each stage must have a research_route_decisions item. If external research would help but network is none, mark external_web as blocked and plan local research only.
 - Node instantiations should normally use executor_kind="codex_cli" because workers are agents.
 - Do not request network access.
 - Do not write sensitive paths.
@@ -519,6 +593,29 @@ Rules:
             deliberation_trace=[
                 str(item) for item in raw_skeleton.get("deliberation_trace", [])
             ],
+            linear_requirement_flow=(
+                raw_skeleton.get("linear_requirement_flow")
+                if isinstance(raw_skeleton.get("linear_requirement_flow"), list)
+                else []
+            ),
+            stage_structure_decisions=(
+                raw_skeleton.get("stage_structure_decisions")
+                if isinstance(raw_skeleton.get("stage_structure_decisions"), list)
+                else []
+            ),
+            research_route_decisions=(
+                raw_skeleton.get("research_route_decisions")
+                if isinstance(raw_skeleton.get("research_route_decisions"), list)
+                else []
+            ),
+            per_stage_agent_allocation=(
+                raw_skeleton.get("per_stage_agent_allocation")
+                if isinstance(raw_skeleton.get("per_stage_agent_allocation"), list)
+                else []
+            ),
+            plan_derivation_trace=[
+                str(item) for item in raw_skeleton.get("plan_derivation_trace", [])
+            ],
             experience_pattern_ids=self._filter_known_patterns(
                 raw_skeleton.get("experience_pattern_ids", selected_pattern_ids),
                 selected_pattern_ids,
@@ -616,6 +713,19 @@ Rules:
                 str(item) for item in raw_grounding.get("grounded_by", [])
             ],
         )
+
+    def _director_deliberative_planning_skill(self) -> dict[str, str]:
+        root = Path(__file__).resolve().parents[1]
+        skill_root = root / "skills" / "director-deliberative-planning"
+        skill_path = skill_root / "SKILL.md"
+        schema_path = skill_root / "references" / "planning_schema.md"
+        return {
+            "name": "director-deliberative-planning",
+            "skill_path": str(skill_path),
+            "schema_path": str(schema_path),
+            "instructions": skill_path.read_text(encoding="utf-8") if skill_path.exists() else "",
+            "planning_schema": schema_path.read_text(encoding="utf-8") if schema_path.exists() else "",
+        }
 
     def _active_director_pattern_ids(
         self,

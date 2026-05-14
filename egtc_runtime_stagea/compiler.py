@@ -239,6 +239,165 @@ class WorkflowCompiler:
                     "Codex Director must explain why selected experience patterns fit the task.",
                 )
             )
+        findings.extend(self._check_director_planning_skill(skeleton))
+        return findings
+
+    def _check_director_planning_skill(self, skeleton) -> list[CompilerFinding]:
+        findings: list[CompilerFinding] = []
+        flow = skeleton.linear_requirement_flow
+        structure_decisions = skeleton.stage_structure_decisions
+        research_decisions = skeleton.research_route_decisions
+        allocations = skeleton.per_stage_agent_allocation
+        derivation = skeleton.plan_derivation_trace
+        if not flow:
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "director_missing_linear_requirement_flow",
+                    "Codex Director must first decompose the objective into a linear requirement flow.",
+                )
+            )
+        if not structure_decisions:
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "director_missing_stage_structure_decisions",
+                    "Codex Director must choose a structure for each linear stage before final nodes.",
+                )
+            )
+        if not research_decisions:
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "director_missing_research_route_decisions",
+                    "Codex Director must decide whether each stage needs research or local expert-route discovery.",
+                )
+            )
+        if not allocations:
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "director_missing_per_stage_agent_allocation",
+                    "Codex Director must allocate agents per stage after structure selection.",
+                )
+            )
+        if not derivation:
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "director_missing_plan_derivation_trace",
+                    "Codex Director must trace final nodes back to stage decisions.",
+                )
+            )
+        if not flow or not structure_decisions or not research_decisions or not allocations:
+            return findings
+
+        stage_ids = {
+            str(stage.get("stage_id"))
+            for stage in flow
+            if isinstance(stage, dict) and stage.get("stage_id")
+        }
+        if len(stage_ids) != len(flow):
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "director_invalid_linear_requirement_flow",
+                    "Every linear_requirement_flow item must have a unique stage_id.",
+                )
+            )
+        for collection_name, collection in [
+            ("stage_structure_decisions", structure_decisions),
+            ("research_route_decisions", research_decisions),
+            ("per_stage_agent_allocation", allocations),
+        ]:
+            decision_stage_ids = {
+                str(item.get("stage_id"))
+                for item in collection
+                if isinstance(item, dict) and item.get("stage_id")
+            }
+            missing = sorted(stage_ids - decision_stage_ids)
+            if missing:
+                findings.append(
+                    CompilerFinding(
+                        "error",
+                        f"director_stage_decisions_missing_{collection_name}",
+                        f"{collection_name} is missing stages: {missing}",
+                    )
+                )
+        for decision in structure_decisions:
+            if not isinstance(decision, dict):
+                continue
+            if not decision.get("selected_structure"):
+                findings.append(
+                    CompilerFinding(
+                        "error",
+                        "director_stage_structure_missing_selection",
+                        "Every stage structure decision must include selected_structure.",
+                    )
+                )
+            if not decision.get("anti_signals"):
+                findings.append(
+                    CompilerFinding(
+                        "error",
+                        "director_stage_structure_missing_anti_signals",
+                        "Every stage structure decision must include anti_signals.",
+                    )
+                )
+        total_stage_agents = 0
+        for allocation in allocations:
+            if not isinstance(allocation, dict):
+                continue
+            count = allocation.get("agent_count")
+            if not isinstance(count, int) or count < 0:
+                findings.append(
+                    CompilerFinding(
+                        "error",
+                        "director_invalid_stage_agent_count",
+                        "Every per-stage allocation must include a non-negative integer agent_count.",
+                    )
+                )
+                continue
+            total_stage_agents += count
+            agents = allocation.get("agents")
+            if not isinstance(agents, list) or len(agents) != count:
+                findings.append(
+                    CompilerFinding(
+                        "error",
+                        "director_stage_agent_list_mismatch",
+                        "Each per-stage allocation must include one agent record per agent_count.",
+                    )
+                )
+            if not allocation.get("count_reason"):
+                findings.append(
+                    CompilerFinding(
+                        "error",
+                        "director_stage_agent_count_missing_reason",
+                        "Each per-stage allocation must explain why that many agents are needed.",
+                    )
+                )
+        total_agents = skeleton.agent_allocation.get("total_agents")
+        if isinstance(total_agents, int) and total_stage_agents != total_agents:
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "director_stage_agent_allocation_mismatch",
+                    "The sum of per-stage agent counts must equal agent_allocation.total_agents.",
+                )
+            )
+        node_ids = {node.node_id for node in skeleton.nodes}
+        missing_from_trace = [
+            node_id
+            for node_id in sorted(node_ids)
+            if not any(node_id in item for item in derivation)
+        ]
+        if missing_from_trace:
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "director_plan_trace_missing_nodes",
+                    f"plan_derivation_trace must mention every final node id: {missing_from_trace}",
+                )
+            )
         return findings
 
     def _check_experience_usage(
