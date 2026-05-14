@@ -73,6 +73,30 @@ def main() -> int:
         if isinstance(item, dict)
     )
     trace_text = "\n".join(output["plan_derivation_trace"])
+    basis_keys = {
+        "basis_id",
+        "source_refs",
+        "matched_signals",
+        "assumptions",
+        "invalidation_signals",
+        "confidence",
+        "correction_target",
+        "correction_action",
+    }
+
+    def has_basis(item: object) -> bool:
+        if not isinstance(item, dict):
+            return False
+        basis = item.get("decision_basis")
+        return isinstance(basis, dict) and basis_keys.issubset(basis)
+
+    allocation_agents = [
+        agent
+        for allocation in output["per_stage_agent_allocation"]
+        if isinstance(allocation, dict)
+        for agent in allocation.get("agents", [])
+        if isinstance(agent, dict)
+    ]
     return 0 if (
         compiled.accepted
         and output["director_mode"] == "codex"
@@ -88,6 +112,11 @@ def main() -> int:
         and len(output["research_route_decisions"]) >= len(output["linear_requirement_flow"])
         and stage_agent_total == total_agents
         and all(node_id in trace_text for node_id in output["node_roles"])
+        and all(has_basis(item) for item in output["linear_requirement_flow"])
+        and all(has_basis(item) for item in output["stage_structure_decisions"])
+        and all(has_basis(item) for item in output["research_route_decisions"])
+        and all(has_basis(item) for item in output["per_stage_agent_allocation"])
+        and all(has_basis(item) for item in allocation_agents)
         and output["scaling_policy"].get("scale_triggers")
         and output["scaling_policy"].get("expansion_strategy")
         and len(output["experience_rationale"]) >= 2

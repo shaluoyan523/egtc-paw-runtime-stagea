@@ -77,6 +77,66 @@ def main() -> int:
                 "requires_replan_when": ["missing evidence"],
             },
             deliberation_trace=["direct plan", "no staged planning"],
+            linear_requirement_flow=[
+                {
+                    "stage_id": "stage-1",
+                    "order": 1,
+                    "name": "Direct implementation",
+                    "purpose": "Negative test with missing basis.",
+                    "inputs": ["objective"],
+                    "outputs": ["diff"],
+                    "risk_level": "medium",
+                    "acceptance_evidence": ["diff"],
+                }
+            ],
+            stage_structure_decisions=[
+                {
+                    "stage_id": "stage-1",
+                    "candidate_structures": [
+                        {
+                            "structure": "single_agent",
+                            "fit": "high",
+                            "reason": "Negative test.",
+                        }
+                    ],
+                    "selected_structure": "single_agent",
+                    "selection_reason": "Negative test.",
+                    "anti_signals": ["parallel surface appears"],
+                }
+            ],
+            research_route_decisions=[
+                {
+                    "stage_id": "stage-1",
+                    "research_needed": False,
+                    "reason": "Negative test.",
+                    "available_sources": ["objective"],
+                    "blocked_sources": ["external_web"],
+                    "planned_queries_or_searches": ["none"],
+                    "adopted_expert_route": "none",
+                    "fallback_if_research_blocked": "replan",
+                }
+            ],
+            per_stage_agent_allocation=[
+                {
+                    "stage_id": "stage-1",
+                    "agent_count": 1,
+                    "count_reason": "Negative test.",
+                    "agents": [
+                        {
+                            "role": "worker",
+                            "task": "Implement directly.",
+                            "inputs": ["objective"],
+                            "outputs": ["diff"],
+                            "ownership_boundary": "repo",
+                            "write_authority": "bounded write path",
+                            "handoff_target": "complete",
+                        }
+                    ],
+                }
+            ],
+            plan_derivation_trace=[
+                "stage-1 selected single_agent, producing final node implement."
+            ],
             experience_rationale=["No pattern selected.", "This is a negative test."],
         ),
         node_instantiations=[
@@ -103,11 +163,7 @@ def main() -> int:
     finding_codes = [finding.code for finding in compiled.findings]
     print(json.dumps(structured(compiled), indent=2, sort_keys=True))
     expected = {
-        "director_missing_linear_requirement_flow",
-        "director_missing_stage_structure_decisions",
-        "director_missing_research_route_decisions",
-        "director_missing_per_stage_agent_allocation",
-        "director_missing_plan_derivation_trace",
+        "director_missing_decision_basis",
     }
     return 0 if not compiled.accepted and expected.issubset(finding_codes) else 1
 

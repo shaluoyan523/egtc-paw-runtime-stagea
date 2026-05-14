@@ -392,7 +392,17 @@ Output strict JSON:
         "inputs": ["objective"],
         "outputs": ["stage artifact"],
         "risk_level": "low | medium | high",
-        "acceptance_evidence": ["evidence_ref"]
+        "acceptance_evidence": ["evidence_ref"],
+        "decision_basis": {
+          "basis_id": "basis-stage-1",
+          "source_refs": ["objective", "repo_policy", "experience:pattern-id"],
+          "matched_signals": ["task signal"],
+          "assumptions": ["assumption that may later be disproven"],
+          "invalidation_signals": ["evidence that would make this decision wrong"],
+          "confidence": "low | medium | high",
+          "correction_target": "linear_requirement_flow[stage-1]",
+          "correction_action": "how to revise this decision during dynamic replanning"
+        }
       }
     ],
     "stage_structure_decisions": [
@@ -404,7 +414,17 @@ Output strict JSON:
         "selected_structure": "single_agent | parallel_exploration | specialist_pool | proposer_aggregator | graph_message_passing | dynamic_routing | hierarchical_subteams | review_gate | tool_planning | research_route",
         "selection_reason": "why this structure fits this stage",
         "anti_signals": ["what would make this structure wrong"],
-        "experience_pattern_ids": ["..."]
+        "experience_pattern_ids": ["..."],
+        "decision_basis": {
+          "basis_id": "basis-structure-stage-1",
+          "source_refs": ["linear_requirement_flow[stage-1]", "experience:pattern-id"],
+          "matched_signals": ["parallel work signal"],
+          "assumptions": ["why this structure should work"],
+          "invalidation_signals": ["when this structure should be replaced"],
+          "confidence": "low | medium | high",
+          "correction_target": "stage_structure_decisions[stage-1]",
+          "correction_action": "switch structure, split stage, or request replan"
+        }
       }
     ],
     "research_route_decisions": [
@@ -416,7 +436,17 @@ Output strict JSON:
         "blocked_sources": ["external_web"],
         "planned_queries_or_searches": ["local search or query plan"],
         "adopted_expert_route": "route selected from experience or local evidence",
-        "fallback_if_research_blocked": "fallback plan"
+        "fallback_if_research_blocked": "fallback plan",
+        "decision_basis": {
+          "basis_id": "basis-research-stage-1",
+          "source_refs": ["objective", "experience_candidates", "network:none"],
+          "matched_signals": ["specialist route signal or no-research signal"],
+          "assumptions": ["what local evidence is expected to cover"],
+          "invalidation_signals": ["what proves research was insufficient"],
+          "confidence": "low | medium | high",
+          "correction_target": "research_route_decisions[stage-1]",
+          "correction_action": "add research node, mark blocked source, or request permission escalation"
+        }
       }
     ],
     "per_stage_agent_allocation": [
@@ -424,6 +454,16 @@ Output strict JSON:
         "stage_id": "stage-1",
         "agent_count": 1,
         "count_reason": "why this many agents are needed for this stage",
+        "decision_basis": {
+          "basis_id": "basis-allocation-stage-1",
+          "source_refs": ["stage_structure_decisions[stage-1]"],
+          "matched_signals": ["width, uncertainty, independence, validation burden, risk"],
+          "assumptions": ["why this count is enough"],
+          "invalidation_signals": ["what proves more/fewer agents are needed"],
+          "confidence": "low | medium | high",
+          "correction_target": "per_stage_agent_allocation[stage-1]",
+          "correction_action": "add, remove, split, or merge agents and recompile graph"
+        },
         "agents": [
           {
             "role": "explorer",
@@ -432,13 +472,23 @@ Output strict JSON:
             "outputs": ["stage output"],
             "ownership_boundary": "what this agent owns",
             "write_authority": "none | bounded write path",
-            "handoff_target": "next stage or node"
+            "handoff_target": "next stage or node",
+            "decision_basis": {
+              "basis_id": "basis-agent-stage-1-explorer",
+              "source_refs": ["per_stage_agent_allocation[stage-1]"],
+              "matched_signals": ["why this role is needed"],
+              "assumptions": ["what this role can resolve"],
+              "invalidation_signals": ["what makes this role redundant or insufficient"],
+              "confidence": "low | medium | high",
+              "correction_target": "node:final-node-id",
+              "correction_action": "replace, remove, split, or add handoff constraints"
+            }
           }
         ]
       }
     ],
     "plan_derivation_trace": [
-      "stage-1 selected parallel_exploration, producing final nodes explore-a and explore-b"
+      "basis-structure-stage-1: stage-1 selected parallel_exploration, producing final nodes explore-a and explore-b"
     ],
     "experience_pattern_ids": ["..."],
     "experience_rationale": ["..."],
@@ -486,6 +536,7 @@ Rules:
 - Compare at least three candidate skeletons, including a small conservative plan, a medium plan, and a larger scalable plan.
 - Pick the smallest plan that has enough coverage, but explicitly describe when it should be expanded.
 - Every final node must be traceable to a linear_requirement_flow stage through per_stage_agent_allocation and plan_derivation_trace.
+- Every planning record must include decision_basis with source_refs, matched_signals, assumptions, invalidation_signals, confidence, correction_target, and correction_action.
 - The sum of per_stage_agent_allocation.agent_count values must equal agent_allocation.total_agents and the final skeleton node count.
 - Each stage_structure_decisions item must include anti_signals.
 - Each stage must have a research_route_decisions item. If external research would help but network is none, mark external_web as blocked and plan local research only.

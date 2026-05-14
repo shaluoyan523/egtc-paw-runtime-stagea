@@ -12,22 +12,26 @@ Use this skill before emitting a workflow plan. The Director must first build pl
 1. Decompose the objective into a linear requirement flow.
    - Write ordered stages that would solve the task if performed by one careful expert.
    - Each stage must include purpose, inputs, outputs, risk, and acceptance evidence.
+   - Each stage must include `decision_basis`, so future replans know why this stage exists.
    - Keep this flow linear even if the final workflow will be parallel.
 
 2. Decide the structure for each stage.
    - For each linear stage, choose one of: single_agent, parallel_exploration, specialist_pool, proposer_aggregator, graph_message_passing, dynamic_routing, hierarchical_subteams, review_gate, tool_planning, research_route.
    - Explain why this structure fits the stage.
    - Name anti-signals that would make the structure wrong.
+   - Include `decision_basis` for the selected structure and any rejected structure that materially influenced the choice.
 
 3. Decide whether research is needed.
    - Use existing experience candidates first.
    - If the task names a niche domain, unfamiliar framework, specialized algorithm, external standard, or unclear expert route, add a research_route stage.
    - If network is not allowed, the Director must plan a read-only repository/documentation search from available local artifacts and mark external research as blocked, not silently skip it.
+   - Include `decision_basis` for each research decision, especially when research is declared unnecessary.
 
 4. Allocate agents after structure selection.
    - Derive counts from stage width, uncertainty, independence of work, validation burden, and risk.
    - Do not use a fixed recipe such as two explorers, one writer, one verifier.
    - For each proposed agent, specify role, task, inputs, outputs, ownership boundary, write authority, and handoff target.
+   - Include `decision_basis` for each per-stage allocation and each agent role when that role is not obvious.
    - If many agents may be needed later, keep the current plan minimal but define scale triggers and expansion tiers.
 
 5. Compare complete candidate plans.
@@ -36,6 +40,7 @@ Use this skill before emitting a workflow plan. The Director must first build pl
 
 6. Emit the final workflow only after the above steps.
    - The final `workflow_skeleton.nodes` and `node_instantiations` must be traceable to the per-stage decisions.
+   - `plan_derivation_trace` must cite the decision basis ids used to derive each final node.
    - Verification and overlooker stages must be read-only unless the repo policy explicitly grounds writes.
    - Experience patterns may shape structure but must not request network, permissions, sandbox changes, secrets, or sensitive writes.
 
@@ -49,6 +54,8 @@ Add these fields under `workflow_skeleton` in addition to the runtime-required f
 - `per_stage_agent_allocation`: agent counts and role assignments per stage.
 - `plan_derivation_trace`: concise trace connecting stage decisions to final nodes.
 
+Every record in those fields must include `decision_basis`. The basis must name evidence or source refs, matched signals, assumptions, invalidation signals, and the workflow field or node that should be patched if the basis is later disproven.
+
 See `references/planning_schema.md` for exact field shapes.
 
 ## Quality Bar
@@ -59,5 +66,7 @@ Reject your own plan and revise before output if:
 - A stage has an agent count but no reason for that count.
 - A chosen structure has no anti-signals.
 - A specialized task has no research decision.
+- Any stage, structure decision, research decision, allocation, or final-node derivation lacks `decision_basis`.
+- A `decision_basis` has no correction target for future replanning.
 - The selected plan is just the first plan considered.
 - The plan scales by adding agents without ownership boundaries.

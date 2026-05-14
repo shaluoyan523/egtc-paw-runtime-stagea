@@ -2,6 +2,30 @@
 
 Director output must include these additional `workflow_skeleton` fields.
 
+## decision_basis
+
+Every planning record below must include a `decision_basis` object:
+
+```json
+{
+  "basis_id": "basis-stage-1",
+  "source_refs": ["objective", "repo_policy.allowed_write_paths", "experience:seed-handoff-artifact-chain"],
+  "matched_signals": ["complex SWE task", "requires tests", "network none"],
+  "assumptions": ["The implementation surface is unknown before exploration."],
+  "invalidation_signals": ["Exploration finds only one trivial file.", "Repo policy blocks all writes."],
+  "confidence": "low|medium|high",
+  "correction_target": "workflow_skeleton.stage_structure_decisions[stage-1]",
+  "correction_action": "Replan this stage as single_agent or request human clarification."
+}
+```
+
+Rules:
+
+- `source_refs` must cite available inputs, repo policy fields, experience pattern ids, local artifacts, or prior stage outputs.
+- `invalidation_signals` must describe evidence that would make the decision wrong.
+- `correction_target` must name the workflow field, stage id, node id, or graph patch target to revise.
+- `correction_action` must say what to change during dynamic replanning.
+
 ## linear_requirement_flow
 
 List of ordered records:
@@ -15,7 +39,17 @@ List of ordered records:
   "inputs": ["objective", "repo_policy"],
   "outputs": ["touchpoint_map", "constraint_summary"],
   "risk_level": "low|medium|high",
-  "acceptance_evidence": ["evidence_ref", "analysis_log"]
+  "acceptance_evidence": ["evidence_ref", "analysis_log"],
+  "decision_basis": {
+    "basis_id": "basis-stage-1",
+    "source_refs": ["objective", "repo_policy", "experience_candidates"],
+    "matched_signals": ["unknown implementation surface"],
+    "assumptions": ["A planning stage will reduce downstream ambiguity."],
+    "invalidation_signals": ["Objective already provides exact file and test."],
+    "confidence": "medium",
+    "correction_target": "linear_requirement_flow[stage-1]",
+    "correction_action": "Remove or merge this stage if it proves redundant."
+  }
 }
 ```
 
@@ -36,7 +70,17 @@ One record per linear stage:
   "selected_structure": "parallel_exploration",
   "selection_reason": "Why this structure is selected for this stage.",
   "anti_signals": ["Signals that would make this structure wrong."],
-  "experience_pattern_ids": ["seed-topology-parallel-explore-implement-verify"]
+  "experience_pattern_ids": ["seed-topology-parallel-explore-implement-verify"],
+  "decision_basis": {
+    "basis_id": "basis-structure-stage-1",
+    "source_refs": ["experience:seed-topology-parallel-explore-implement-verify"],
+    "matched_signals": ["parallelizable read-only discovery"],
+    "assumptions": ["Subtasks can be explored without writes."],
+    "invalidation_signals": ["Exploration requires generated files."],
+    "confidence": "medium",
+    "correction_target": "stage_structure_decisions[stage-1]",
+    "correction_action": "Switch to single_agent or tool_planning and recompile edges."
+  }
 }
 ```
 
@@ -66,7 +110,17 @@ List of records:
   "blocked_sources": ["external_web"],
   "planned_queries_or_searches": ["search repo docs for scheduler extension points"],
   "adopted_expert_route": "Use existing local experience pattern or repo-documented route.",
-  "fallback_if_research_blocked": "Proceed with conservative exploration and require replan if evidence is insufficient."
+  "fallback_if_research_blocked": "Proceed with conservative exploration and require replan if evidence is insufficient.",
+  "decision_basis": {
+    "basis_id": "basis-research-stage-2",
+    "source_refs": ["objective", "repo_files", "network:none"],
+    "matched_signals": ["unfamiliar framework route"],
+    "assumptions": ["Local docs contain enough route evidence."],
+    "invalidation_signals": ["No local docs or examples mention the required route."],
+    "confidence": "low",
+    "correction_target": "research_route_decisions[stage-2]",
+    "correction_action": "Request Director replan with a research node or ask for permission escalation."
+  }
 }
 ```
 
@@ -81,6 +135,16 @@ List of records:
   "stage_id": "stage-1",
   "agent_count": 2,
   "count_reason": "Two independent read-only surfaces need exploration.",
+  "decision_basis": {
+    "basis_id": "basis-allocation-stage-1",
+    "source_refs": ["stage_structure_decisions[stage-1]", "repo_policy"],
+    "matched_signals": ["two independent discovery surfaces"],
+    "assumptions": ["The outputs can be joined before implementation."],
+    "invalidation_signals": ["Explorers report overlapping scope or contradictory ownership."],
+    "confidence": "medium",
+    "correction_target": "per_stage_agent_allocation[stage-1]",
+    "correction_action": "Merge explorers or add a synthesis node before implementation."
+  },
   "agents": [
     {
       "role": "explorer",
@@ -89,7 +153,17 @@ List of records:
       "outputs": ["touchpoint_map"],
       "ownership_boundary": "Read-only repository analysis.",
       "write_authority": "none",
-      "handoff_target": "implement"
+      "handoff_target": "implement",
+      "decision_basis": {
+        "basis_id": "basis-agent-stage-1-explorer",
+        "source_refs": ["stage_structure_decisions[stage-1]"],
+        "matched_signals": ["read-only touchpoint discovery"],
+        "assumptions": ["A specialist explorer reduces implementation risk."],
+        "invalidation_signals": ["No repo surface to inspect."],
+        "confidence": "medium",
+        "correction_target": "node:explore-context",
+        "correction_action": "Remove or merge this agent during graph patching."
+      }
     }
   ]
 }
@@ -103,8 +177,8 @@ List of concise trace strings:
 
 ```json
 [
-  "stage-1 selected parallel_exploration, producing nodes explore-context and explore-tests.",
-  "stage-2 selected single_agent because writes are not yet provably independent, producing node implement."
+  "basis-structure-stage-1: stage-1 selected parallel_exploration, producing nodes explore-context and explore-tests.",
+  "basis-allocation-stage-2: stage-2 selected single_agent because writes are not yet provably independent, producing node implement."
 ]
 ```
 

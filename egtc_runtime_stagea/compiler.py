@@ -69,6 +69,16 @@ class WorkflowCompiler:
         "sandbox_profile",
         "secret_refs",
     }
+    REQUIRED_DECISION_BASIS_KEYS = {
+        "basis_id",
+        "source_refs",
+        "matched_signals",
+        "assumptions",
+        "invalidation_signals",
+        "confidence",
+        "correction_target",
+        "correction_action",
+    }
 
     def compile(
         self,
@@ -305,6 +315,14 @@ class WorkflowCompiler:
                     "Every linear_requirement_flow item must have a unique stage_id.",
                 )
             )
+        for stage in flow:
+            if isinstance(stage, dict):
+                findings.extend(
+                    self._check_decision_basis(
+                        stage,
+                        f"linear_requirement_flow[{stage.get('stage_id', '?')}]",
+                    )
+                )
         for collection_name, collection in [
             ("stage_structure_decisions", structure_decisions),
             ("research_route_decisions", research_decisions),
@@ -327,6 +345,12 @@ class WorkflowCompiler:
         for decision in structure_decisions:
             if not isinstance(decision, dict):
                 continue
+            findings.extend(
+                self._check_decision_basis(
+                    decision,
+                    f"stage_structure_decisions[{decision.get('stage_id', '?')}]",
+                )
+            )
             if not decision.get("selected_structure"):
                 findings.append(
                     CompilerFinding(
@@ -343,10 +367,24 @@ class WorkflowCompiler:
                         "Every stage structure decision must include anti_signals.",
                     )
                 )
+        for decision in research_decisions:
+            if isinstance(decision, dict):
+                findings.extend(
+                    self._check_decision_basis(
+                        decision,
+                        f"research_route_decisions[{decision.get('stage_id', '?')}]",
+                    )
+                )
         total_stage_agents = 0
         for allocation in allocations:
             if not isinstance(allocation, dict):
                 continue
+            findings.extend(
+                self._check_decision_basis(
+                    allocation,
+                    f"per_stage_agent_allocation[{allocation.get('stage_id', '?')}]",
+                )
+            )
             count = allocation.get("agent_count")
             if not isinstance(count, int) or count < 0:
                 findings.append(
@@ -367,6 +405,19 @@ class WorkflowCompiler:
                         "Each per-stage allocation must include one agent record per agent_count.",
                     )
                 )
+            if isinstance(agents, list):
+                for agent in agents:
+                    if isinstance(agent, dict):
+                        findings.extend(
+                            self._check_decision_basis(
+                                agent,
+                                (
+                                    "per_stage_agent_allocation"
+                                    f"[{allocation.get('stage_id', '?')}].agents"
+                                    f"[{agent.get('role', '?')}]"
+                                ),
+                            )
+                        )
             if not allocation.get("count_reason"):
                 findings.append(
                     CompilerFinding(
@@ -398,6 +449,57 @@ class WorkflowCompiler:
                     f"plan_derivation_trace must mention every final node id: {missing_from_trace}",
                 )
             )
+        return findings
+
+    def _check_decision_basis(
+        self,
+        record: dict[str, object],
+        location: str,
+    ) -> list[CompilerFinding]:
+        basis = record.get("decision_basis")
+        if not isinstance(basis, dict):
+            return [
+                CompilerFinding(
+                    "error",
+                    "director_missing_decision_basis",
+                    f"{location} must include decision_basis for dynamic replanning.",
+                )
+            ]
+        findings: list[CompilerFinding] = []
+        missing = sorted(self.REQUIRED_DECISION_BASIS_KEYS - set(basis))
+        if missing:
+            findings.append(
+                CompilerFinding(
+                    "error",
+                    "director_decision_basis_missing_keys",
+                    f"{location}.decision_basis is missing keys: {missing}",
+                )
+            )
+        for key in [
+            "source_refs",
+            "matched_signals",
+            "assumptions",
+            "invalidation_signals",
+        ]:
+            value = basis.get(key)
+            if not isinstance(value, list) or not value:
+                findings.append(
+                    CompilerFinding(
+                        "error",
+                        "director_decision_basis_empty_evidence",
+                        f"{location}.decision_basis.{key} must be a non-empty list.",
+                    )
+                )
+        for key in ["basis_id", "confidence", "correction_target", "correction_action"]:
+            value = basis.get(key)
+            if not isinstance(value, str) or not value.strip():
+                findings.append(
+                    CompilerFinding(
+                        "error",
+                        "director_decision_basis_empty_correction",
+                        f"{location}.decision_basis.{key} must be a non-empty string.",
+                    )
+                )
         return findings
 
     def _check_experience_usage(
