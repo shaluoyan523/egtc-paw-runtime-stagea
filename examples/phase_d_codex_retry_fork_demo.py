@@ -119,6 +119,12 @@ def main() -> int:
     fork_history = verify["fork_history"]
     attempt1 = Path(fork_history[0]["target_workspace"])
     attempt2 = Path(fork_history[1]["target_workspace"]) if len(fork_history) > 1 else None
+    workflow_observations = runtime.experience_library.load_workflow_observations()
+    observation = workflow_observations[-1] if workflow_observations else None
+    workflow_dynamic_events = [
+        event["event_type"]
+        for event in (observation.dynamic_workflow_events if observation else [])
+    ]
     report = {
         "accepted": result["accepted"],
         "status": result["status"],
@@ -135,6 +141,12 @@ def main() -> int:
         "graph_patch_history": verify["graph_patch_history"],
         "retry_events": result["retry_events"],
         "checkpoint_path": result["checkpoint_path"],
+        "workflow_learning_present": bool(result.get("workflow_learning")),
+        "workflow_observation_count": len(workflow_observations),
+        "workflow_outcome": observation.outcome if observation else None,
+        "workflow_retry_count": observation.retry_count if observation else None,
+        "workflow_replan_count": observation.replan_count if observation else None,
+        "workflow_dynamic_events": workflow_dynamic_events,
     }
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if (
@@ -151,6 +163,13 @@ def main() -> int:
         and report["attempt1_poison_exists"]
         and not report["attempt2_poison_exists"]
         and report["attempt2_success_exists"]
+        and report["workflow_learning_present"]
+        and report["workflow_observation_count"] == 1
+        and report["workflow_outcome"] == "replanned"
+        and report["workflow_retry_count"] == 1
+        and report["workflow_replan_count"] == 1
+        and "DirectorGraphPatchSessionCompleted" in report["workflow_dynamic_events"]
+        and "OverlookerForkDecision" in report["workflow_dynamic_events"]
     ) else 1
 
 

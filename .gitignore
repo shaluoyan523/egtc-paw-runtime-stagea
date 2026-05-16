@@ -30,6 +30,7 @@ phasef_experience_catalog_seed_tmp/
 phasef_experience_catalog_demo_data/
 phasef_experience_catalog_data/
 phasef_experience_data/
+phaseg_workflow_learning_data/
 
 # Local credentials/configuration must not be committed.
 .env

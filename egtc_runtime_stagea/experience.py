@@ -83,6 +83,25 @@ class ExperienceObservation:
 
 
 @dataclass
+class WorkflowExperienceObservation:
+    observation_id: str
+    run_id: str
+    graph_id: str
+    phase: str
+    outcome: str
+    pattern_ids_used: list[str]
+    node_outcomes: dict[str, str]
+    dynamic_workflow_events: list[dict[str, Any]]
+    integration_summary: dict[str, Any]
+    retry_count: int
+    replan_count: int
+    branch_candidate_count: int
+    recommended_update: str
+    evidence_refs: list[str] = field(default_factory=list)
+    created_at: float = field(default_factory=time.time)
+
+
+@dataclass
 class ExperienceUpdateProposal:
     proposal_id: str
     proposed_by: str
@@ -109,6 +128,7 @@ class ExperienceLibrary:
         self.root.mkdir(parents=True, exist_ok=True)
         self.pattern_path = self.root / "patterns.jsonl"
         self.observation_path = self.root / "observations.jsonl"
+        self.workflow_observation_path = self.root / "workflow_observations.jsonl"
         self.proposal_path = self.root / "update_proposals.jsonl"
 
     def seed_defaults(self) -> list[ExperiencePattern]:
@@ -199,6 +219,13 @@ class ExperienceLibrary:
         self._validate_observation(observation)
         self._append_jsonl(self.observation_path, to_plain_dict(observation))
 
+    def record_workflow_observation(
+        self,
+        observation: WorkflowExperienceObservation,
+    ) -> None:
+        self._validate_workflow_observation(observation)
+        self._append_jsonl(self.workflow_observation_path, to_plain_dict(observation))
+
     def propose_update(self, proposal: ExperienceUpdateProposal) -> None:
         self._validate_proposal(proposal)
         self._append_jsonl(self.proposal_path, to_plain_dict(proposal))
@@ -207,6 +234,12 @@ class ExperienceLibrary:
         return [
             ExperienceObservation(**raw)
             for raw in self._read_jsonl(self.observation_path)
+        ]
+
+    def load_workflow_observations(self) -> list[WorkflowExperienceObservation]:
+        return [
+            WorkflowExperienceObservation(**raw)
+            for raw in self._read_jsonl(self.workflow_observation_path)
         ]
 
     def load_update_proposals(self) -> list[ExperienceUpdateProposal]:
@@ -312,6 +345,48 @@ class ExperienceLibrary:
             proposals.append(proposal)
         return proposals
 
+    def update_from_workflow_observation(
+        self,
+        observation: WorkflowExperienceObservation,
+        *,
+        proposed_by: str = "workflow-runtime",
+    ) -> list[ExperienceUpdateProposal]:
+        proposals: list[ExperienceUpdateProposal] = []
+        if not observation.pattern_ids_used:
+            return proposals
+        if observation.outcome == "accepted" and observation.replan_count == 0:
+            update_type = "promote"
+            rationale = "Workflow completed without dynamic replanning."
+        elif observation.outcome == "accepted":
+            update_type = "revise"
+            rationale = (
+                "Workflow completed after dynamic workflow updates; pattern should learn "
+                "the successful replan path."
+            )
+        elif observation.outcome in {"replanned", "retried"}:
+            update_type = "revise"
+            rationale = "Workflow required dynamic correction and should be reviewed."
+        else:
+            update_type = "demote"
+            rationale = "Workflow did not reach acceptance."
+        rationale += (
+            f" retry_count={observation.retry_count};"
+            f" replan_count={observation.replan_count};"
+            f" branch_candidate_count={observation.branch_candidate_count}."
+        )
+        for pattern_id in observation.pattern_ids_used:
+            proposal = ExperienceUpdateProposal(
+                proposal_id=f"workflow-exp-proposal-{uuid.uuid4().hex[:12]}",
+                proposed_by=proposed_by,
+                target_pattern_id=pattern_id,
+                update_type=update_type,
+                evidence_refs=observation.evidence_refs,
+                rationale=rationale,
+            )
+            self.propose_update(proposal)
+            proposals.append(proposal)
+        return proposals
+
     def _validate_pattern(self, pattern: ExperiencePattern) -> None:
         if pattern.pattern_type not in PATTERN_TYPES:
             raise ValueError(f"Unknown experience pattern_type: {pattern.pattern_type}")
@@ -329,6 +404,17 @@ class ExperienceLibrary:
             raise ValueError(f"Unknown experience outcome: {observation.outcome}")
         if not observation.observation_id:
             raise ValueError("ExperienceObservation requires observation_id")
+
+    def _validate_workflow_observation(
+        self,
+        observation: WorkflowExperienceObservation,
+    ) -> None:
+        if observation.outcome not in OBSERVATION_OUTCOMES:
+            raise ValueError(f"Unknown workflow experience outcome: {observation.outcome}")
+        if not observation.observation_id:
+            raise ValueError("WorkflowExperienceObservation requires observation_id")
+        if not observation.run_id or not observation.graph_id:
+            raise ValueError("WorkflowExperienceObservation requires run_id and graph_id")
 
     def _validate_proposal(self, proposal: ExperienceUpdateProposal) -> None:
         if proposal.update_type not in UPDATE_TYPES:

@@ -14,7 +14,11 @@ from .artifact_store import ArtifactStore
 from .codex_wrapper import CodexExecWrapper
 from .compiler import WorkflowCompiler
 from .event_log import EventLog
-from .experience import ExperienceLibrary, ExperienceObservation
+from .experience import (
+    ExperienceLibrary,
+    ExperienceObservation,
+    WorkflowExperienceObservation,
+)
 from .evidence import EvidenceCollector
 from .identity import IdentityService
 from .models import (
@@ -355,6 +359,16 @@ class GraphRuntime:
             "nodes": {node_id: to_plain_dict(record) for node_id, record in records.items()},
             "events": self.event_log.list_events(run_id),
         }
+        if not pause_requested:
+            summary["workflow_learning"] = self._record_workflow_experience_observation(
+                run_id,
+                spec,
+                records,
+                status,
+                integration_result,
+                retry_events,
+                summary["events"],
+            )
         self._record(run_id, spec.graph_id, "GraphRunCompleted", summary)
         return summary
 
@@ -1528,6 +1542,140 @@ Rules:
             "ExperienceObservationRecorded",
             observation_event,
         )
+
+    def _record_workflow_experience_observation(
+        self,
+        run_id: str,
+        spec: GraphRunSpec,
+        records: dict[str, GraphNodeRecord],
+        status: str,
+        integration_result: dict[str, Any] | None,
+        retry_events: list[dict[str, Any]],
+        events: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        pattern_ids: list[str] = []
+        for record in records.values():
+            for pattern_id in record.experience_pattern_ids:
+                if pattern_id not in pattern_ids:
+                    pattern_ids.append(pattern_id)
+        dynamic_event_names = {
+            "DirectorGraphPatchProposed",
+            "DirectorGraphPatchSessionCompleted",
+            "GraphPatchApplied",
+            "GraphPatchRolledBack",
+            "GraphPatchRejected",
+            "GraphPatchNoop",
+            "NodeRetryScheduled",
+            "NodeRetryNotScheduled",
+            "PhaseEBranchCandidateCreated",
+            "PhaseEBranchGateReviewed",
+            "PhaseEIntegrationGateCompleted",
+            "OverlookerForkDecision",
+            "OverlookerForkPointSelected",
+        }
+        replan_event_names = {
+            "DirectorGraphPatchProposed",
+            "DirectorGraphPatchSessionCompleted",
+            "GraphPatchApplied",
+            "GraphPatchRolledBack",
+            "GraphPatchRejected",
+            "GraphPatchNoop",
+        }
+        dynamic_events = [
+            {
+                "event_type": event.get("event_type"),
+                "node_id": event.get("node_id"),
+                "payload": event.get("payload"),
+            }
+            for event in events
+            if event.get("event_type") in dynamic_event_names
+        ]
+        replan_patch_ids: set[str] = set()
+        replan_events_without_patch = 0
+        for event in dynamic_events:
+            if event.get("event_type") not in replan_event_names:
+                continue
+            payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+            patch = payload.get("patch") if isinstance(payload.get("patch"), dict) else {}
+            compiled = (
+                payload.get("compiled")
+                if isinstance(payload.get("compiled"), dict)
+                else {}
+            )
+            patch_id = payload.get("patch_id") or patch.get("patch_id") or compiled.get("patch_id")
+            if patch_id:
+                replan_patch_ids.add(str(patch_id))
+            else:
+                replan_events_without_patch += 1
+        replan_count = len(replan_patch_ids) + replan_events_without_patch
+        branch_candidate_count = sum(
+            1 for record in records.values() if record.branch_candidate_ref
+        )
+        evidence_refs: list[str] = []
+        for record in records.values():
+            for ref in [
+                record.evidence_ref,
+                record.overlooker_report_ref,
+                record.second_overlooker_report_ref,
+                record.branch_candidate_ref,
+                record.integration_report_ref,
+            ]:
+                if ref and ref not in evidence_refs:
+                    evidence_refs.append(ref)
+        outcome = self._workflow_experience_outcome(
+            status,
+            retry_events,
+            replan_count,
+        )
+        observation = WorkflowExperienceObservation(
+            observation_id=f"workflow-exp-observation-{uuid.uuid4().hex[:12]}",
+            run_id=run_id,
+            graph_id=spec.graph_id,
+            phase=spec.phase,
+            outcome=outcome,
+            pattern_ids_used=pattern_ids,
+            node_outcomes={
+                node_id: record.status for node_id, record in records.items()
+            },
+            dynamic_workflow_events=dynamic_events,
+            integration_summary=(integration_result or {}),
+            retry_count=len(retry_events),
+            replan_count=replan_count,
+            branch_candidate_count=branch_candidate_count,
+            recommended_update=(
+                "revise"
+                if status == "accepted" and (replan_count or retry_events)
+                else ("promote" if status == "accepted" else "demote")
+            ),
+            evidence_refs=evidence_refs,
+        )
+        self.experience_library.record_workflow_observation(observation)
+        proposals = self.experience_library.update_from_workflow_observation(
+            observation,
+            proposed_by="workflow-runtime",
+        )
+        event = {
+            "observation": to_plain_dict(observation),
+            "update_proposals": [to_plain_dict(proposal) for proposal in proposals],
+        }
+        self._record(run_id, spec.graph_id, "WorkflowExperienceObservationRecorded", event)
+        return event
+
+    def _workflow_experience_outcome(
+        self,
+        status: str,
+        retry_events: list[dict[str, Any]],
+        replan_count: int,
+    ) -> str:
+        if status == "accepted" and replan_count:
+            return "replanned"
+        if status == "accepted" and retry_events:
+            return "retried"
+        if status == "accepted":
+            return "accepted"
+        if status in {"aborted", "blocked"}:
+            return "aborted"
+        return "rejected"
 
     def _record_branch_candidate(
         self,

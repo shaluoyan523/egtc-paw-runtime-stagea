@@ -151,6 +151,14 @@ The committed seed catalog is also available at `docs/experience_catalog_seed_v1
 
 Phase F adds an evolvable `ExperienceLibrary` of agent-readable orchestration patterns. The default catalog includes engineering runtime patterns and paper-derived patterns for proposer/aggregator layers, graph message passing, dynamic topology routing, learned routing gates, hierarchical memory planning, large-scale hierarchy, evolutionary or self-rectifying agent generation, cross-team governance, company-style role lifecycle, topology security controls, verification-aware planning, intervention debugging, context-efficient tool planning, disagreement-based recruitment, and protocol-aware communication.
 
+Run the Phase G workflow-learning demo:
+
+```bash
+python3 examples/phase_g_workflow_learning_demo.py
+```
+
+Phase G adds Hermes-style workflow learning after each completed graph run. The runtime records workflow-level observations into the experience library, including selected pattern ids, node outcomes, retry count, Director GraphPatch/replan events, Overlooker fork events, branch candidates, and final integration decisions. Accepted workflows can promote patterns, failed workflows can demote patterns, and workflows that only succeed after dynamic updates create revision proposals so the successful correction path can be reviewed and folded back into the experience library.
+
 Director deliberation skill:
 
 ```text
@@ -202,9 +210,17 @@ Phase F adds:
 - Compiler checks that experience patterns can shape workflow structure but cannot request permissions, sandbox changes, network, or secrets.
 - Compiler checks that Codex Director plans include linear requirement flow, stage structure decisions, research-route decisions, per-stage agent allocation, and node derivation trace.
 
-Deferred beyond Phase F:
+Phase G adds:
 
-- Secret handling, redaction, artifact secret scanning, and per-run isolation boundaries belong to Phase G.
+- `WorkflowExperienceObservation` for graph-level run outcomes.
+- JSONL-backed workflow observation persistence under the same `ExperienceLibrary`.
+- Automatic workflow update proposals after non-paused graph runs.
+- Learning from dynamic workflow updates, including Director GraphPatch application, retry scheduling, Overlooker fork selection, Phase E branch candidates, and final integration gates.
+- Runtime summaries expose `workflow_learning` with the recorded observation and proposed experience updates.
+
+Deferred beyond Phase G:
+
+- Secret handling, redaction, artifact secret scanning, and stronger per-run isolation boundaries.
 
 Publish as a private GitHub repository:
 

@@ -74,6 +74,12 @@ def main() -> int:
     result = runtime.run_graph(spec, run_id="phase-e-branch-integration-demo")
     nodes = result["nodes"]
     integration = result["integration_result"] or {}
+    workflow_observations = runtime.experience_library.load_workflow_observations()
+    workflow_observation = workflow_observations[-1] if workflow_observations else None
+    workflow_dynamic_events = [
+        event["event_type"]
+        for event in (workflow_observation.dynamic_workflow_events if workflow_observation else [])
+    ]
     report = {
         "accepted": result["accepted"],
         "status": result["status"],
@@ -85,6 +91,11 @@ def main() -> int:
         "integration_accepted": integration.get("accepted"),
         "integration_verdict": (integration.get("report") or {}).get("verdict"),
         "integration_action": (integration.get("report") or {}).get("recommended_action"),
+        "workflow_observation_count": len(workflow_observations),
+        "workflow_branch_candidate_count": (
+            workflow_observation.branch_candidate_count if workflow_observation else None
+        ),
+        "workflow_dynamic_events": workflow_dynamic_events,
         "integration_report_refs": {
             node_id: node["integration_report_ref"] for node_id, node in nodes.items()
         },
@@ -104,6 +115,10 @@ def main() -> int:
         and report["integration_accepted"]
         and report["integration_verdict"] == "pass"
         and report["integration_action"] == "advance"
+        and report["workflow_observation_count"] == 1
+        and report["workflow_branch_candidate_count"] == 2
+        and "PhaseEBranchCandidateCreated" in report["workflow_dynamic_events"]
+        and "PhaseEIntegrationGateCompleted" in report["workflow_dynamic_events"]
         and all(report["integration_report_refs"].values())
         and not report["director_patch_events"]
     ) else 1
