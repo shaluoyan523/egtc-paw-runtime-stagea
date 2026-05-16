@@ -13,7 +13,6 @@ from typing import Any
 from .artifact_store import ArtifactStore
 from .codex_wrapper import CodexExecWrapper
 from .compiler import WorkflowCompiler
-from .conflict import ConflictResolver
 from .event_log import EventLog
 from .experience import ExperienceLibrary, ExperienceObservation
 from .evidence import EvidenceCollector
@@ -44,6 +43,8 @@ TERMINAL_STATUSES = {
     "NODE_ABORTED",
 }
 
+PHASE_E_BRANCH_READY = "NODE_BRANCH_READY"
+
 
 @dataclass
 class GraphRunSpec:
@@ -59,6 +60,7 @@ class GraphRunSpec:
     replan_budget: int = 0
     phase: str = "D"
     second_overlooker_mode: str = "deterministic"
+    integration_overlooker_mode: str = "deterministic"
 
 
 @dataclass
@@ -88,6 +90,14 @@ class GraphNodeRecord:
     second_overlooker_report_ref: str | None = None
     conflict_resolution: dict[str, Any] | None = None
     conflict_history: list[dict[str, Any]] = field(default_factory=list)
+    branch_name: str | None = None
+    branch_workspace: str | None = None
+    branch_candidate_ref: str | None = None
+    branch_candidate: dict[str, Any] | None = None
+    integration_report_ref: str | None = None
+    integration_decision: dict[str, Any] | None = None
+    human_review_required: bool = False
+    permission_escalation_required: bool = False
     current_workspace: str | None = None
     accepted_workspace: str | None = None
     fork_source_node_id: str | None = None
@@ -153,7 +163,6 @@ class GraphRuntime:
             self.artifacts, self.director_actor, self.director_token
         )
         self.compiler = WorkflowCompiler()
-        self.conflict_resolver = ConflictResolver()
         self.experience_library = ExperienceLibrary(self.root / "experience")
         self.experience_library.seed_defaults()
         self.collector = EvidenceCollector(
@@ -224,7 +233,7 @@ class GraphRuntime:
 
                 made_progress = False
                 while len(active) < spec.max_parallelism:
-                    candidate = self._next_runnable(records)
+                    candidate = self._next_runnable(spec, records)
                     if candidate is None:
                         break
                     record = records[candidate]
@@ -319,6 +328,17 @@ class GraphRuntime:
                             retry_events.append(retry_event)
                     self._write_checkpoint(run_id, spec, records, "running")
 
+        integration_result: dict[str, Any] | None = None
+        if (
+            not pause_requested
+            and self._phase_e_enabled(spec.phase, spec.overlooker_mode)
+            and self._ready_for_phase_e_integration(records)
+        ):
+            integration_result = self._run_phase_e_integration_gate(
+                run_id,
+                spec,
+                records,
+            )
         status = "paused" if pause_requested else self._graph_status(records)
         self._write_checkpoint(run_id, spec, records, status)
         summary = {
@@ -326,6 +346,7 @@ class GraphRuntime:
             "graph_id": spec.graph_id,
             "status": status,
             "accepted": status == "accepted",
+            "integration_result": integration_result,
             "max_parallelism": spec.max_parallelism,
             "max_observed_parallelism": max_observed_parallelism,
             "write_lock_waits": write_lock_waits,
@@ -393,7 +414,8 @@ class GraphRuntime:
         conflict: DecisionConflict | None = None
         resolution: ConflictResolution | None = None
         high_risk = self._is_high_risk(node)
-        if self._phase_e_enabled(phase, overlooker_mode) and high_risk:
+        phase_e_enabled = self._phase_e_enabled(phase, overlooker_mode)
+        if phase_e_enabled and high_risk:
             second_overlooker_report = self._second_overlooker_review(
                 run_id,
                 node,
@@ -411,30 +433,40 @@ class GraphRuntime:
                 [overlooker_report, second_overlooker_report],
                 high_risk,
             )
-            resolution = self.conflict_resolver.resolve(conflict)
             self._record(
                 run_id,
                 node.node_id,
-                "DecisionConflictResolved",
+                "PhaseEBranchGateReviewed",
                 {
                     "conflict": to_plain_dict(conflict),
-                    "resolution": to_plain_dict(resolution),
+                    "resolution": None,
+                    "note": "Phase E defers final integration to the integration Overlooker.",
                 },
             )
-        elif self._phase_e_enabled(phase, overlooker_mode):
-            conflict = self._build_conflict(
-                run_id,
-                node,
-                validator_reports,
-                [overlooker_report],
-                high_risk,
-            )
-            resolution = self.conflict_resolver.resolve(conflict)
 
         if resolution is not None:
             final_state = (
                 NodeState.NODE_ACCEPTED.value
                 if resolution.release_node
+                else NodeState.NODE_REJECTED.value
+            )
+        elif phase_e_enabled:
+            validators_passed = all(report.passed for report in validator_reports)
+            branch_gate_passed = (
+                worker_result.exit_code == 0
+                and validators_passed
+                and bool(evidence.evidence_ref.uri)
+                and (
+                    not high_risk
+                    or (
+                        second_overlooker_report is not None
+                        and second_overlooker_report.evidence_ref is not None
+                    )
+                )
+            )
+            final_state = (
+                PHASE_E_BRANCH_READY
+                if branch_gate_passed
                 else NodeState.NODE_REJECTED.value
             )
         else:
@@ -502,11 +534,15 @@ class GraphRuntime:
                 record.overlooker_recommended_action = "request_permission_review"
             elif result.conflict_resolution.required_action == "require_human_review":
                 record.overlooker_recommended_action = "require_human_review"
-        if result.final_state == NodeState.NODE_ACCEPTED.value:
+        if result.final_state in {NodeState.NODE_ACCEPTED.value, PHASE_E_BRANCH_READY}:
+            if result.final_state == PHASE_E_BRANCH_READY:
+                self._record_branch_candidate(run_id, graph_id, record, result)
             record.status = "NODE_ACCEPTED"
             record.failure_code = None
             record.workspace = result.workspace
             record.accepted_workspace = result.workspace
+            if result.final_state == PHASE_E_BRANCH_READY:
+                record.status = PHASE_E_BRANCH_READY
         else:
             record.status = "NODE_REJECTED"
             record.failure_code = self._failure_code(result.worker_result, result.validator_reports)
@@ -1235,8 +1271,19 @@ Rules:
         workspace: Path | None = None,
     ) -> OverlookerReport:
         validators_passed = all(report.passed for report in validator_reports)
-        can_pass = worker_result.exit_code == 0 and validators_passed and bool(evidence.evidence_ref.uri)
         hint = self._read_overlooker_hint(workspace)
+        hinted_action = str(hint.get("recommended_action") or "")
+        blocking_hint = hinted_action in {
+            "request_permission_review",
+            "require_human_review",
+            "require_second_overlooker",
+        }
+        can_pass = (
+            worker_result.exit_code == 0
+            and validators_passed
+            and bool(evidence.evidence_ref.uri)
+            and not blocking_hint
+        )
         recommended_action = (
             "advance"
             if can_pass
@@ -1429,7 +1476,7 @@ Rules:
         pattern_ids = list(result.experience_pattern_ids or record.experience_pattern_ids)
         if not pattern_ids:
             return
-        if record.status == "NODE_ACCEPTED":
+        if record.status in {"NODE_ACCEPTED", PHASE_E_BRANCH_READY}:
             outcome = "accepted"
             recommended_update = "promote"
         elif record.status == "NODE_ABORTED":
@@ -1482,6 +1529,335 @@ Rules:
             observation_event,
         )
 
+    def _record_branch_candidate(
+        self,
+        run_id: str,
+        graph_id: str,
+        record: GraphNodeRecord,
+        result: NodeExecutionResult,
+    ) -> None:
+        branch_name = f"{run_id}/{record.node_id}/attempt-{result.attempt}"
+        candidate = {
+            "schema": "egtc.phase_e.branch_candidate.v1",
+            "run_id": run_id,
+            "graph_id": graph_id,
+            "node_id": record.node_id,
+            "attempt": result.attempt,
+            "branch_name": branch_name,
+            "branch_workspace": result.workspace,
+            "worker_id": result.worker_result.worker_id,
+            "evidence_ref": result.evidence.evidence_ref.uri,
+            "overlooker_report_ref": (
+                result.overlooker_report.report_ref.uri
+                if result.overlooker_report.report_ref
+                else None
+            ),
+            "overlooker_recommended_action": result.overlooker_report.recommended_action,
+            "validator_reports": to_plain_dict(result.validator_reports),
+            "workspace_diff": result.workspace_diff,
+        }
+        candidate_ref = self.artifacts.put_json(
+            candidate,
+            {
+                "kind": "phase_e_branch_candidate",
+                "graph_id": graph_id,
+                "node_id": record.node_id,
+                "branch_name": branch_name,
+            },
+            self.runtime_actor,
+            self.runtime_token,
+        )
+        record.branch_name = branch_name
+        record.branch_workspace = result.workspace
+        record.branch_candidate = candidate
+        record.branch_candidate_ref = candidate_ref.uri
+        self._record(
+            run_id,
+            record.node_id,
+            "PhaseEBranchCandidateCreated",
+            {
+                "branch_candidate": candidate,
+                "branch_candidate_ref": to_plain_dict(candidate_ref),
+            },
+        )
+
+    def _run_phase_e_integration_gate(
+        self,
+        run_id: str,
+        spec: GraphRunSpec,
+        records: dict[str, GraphNodeRecord],
+    ) -> dict[str, Any]:
+        packet = {
+            "schema": "egtc.phase_e.integration_packet.v1",
+            "run_id": run_id,
+            "graph_id": spec.graph_id,
+            "policy": {
+                "director_realtime_arbitration": False,
+                "integration_owner": "overlooker",
+                "permission_escalation_owner": "overlooker",
+                "human_review_owner": "overlooker",
+                "required_branch_state": PHASE_E_BRANCH_READY,
+            },
+            "branch_candidates": [
+                {
+                    "node_id": record.node_id,
+                    "branch_name": record.branch_name,
+                    "branch_workspace": record.branch_workspace,
+                    "branch_candidate_ref": record.branch_candidate_ref,
+                    "overlooker_report_ref": record.overlooker_report_ref,
+                    "second_overlooker_report_ref": record.second_overlooker_report_ref,
+                    "overlooker_recommended_action": record.overlooker_recommended_action,
+                    "high_risk": record.high_risk,
+                    "status": record.status,
+                }
+                for record in records.values()
+            ],
+        }
+        if spec.integration_overlooker_mode in {"codex", "codex_phase_e"}:
+            report = self._codex_phase_e_integration_review(run_id, spec, packet)
+        else:
+            report = self._deterministic_phase_e_integration_review(spec, records, packet)
+        report_ref = self.artifacts.put_json(
+            report,
+            {
+                "kind": "phase_e_integration_overlooker_report",
+                "graph_id": spec.graph_id,
+                "run_id": run_id,
+            },
+            self.runtime_actor,
+            self.runtime_token,
+        )
+        accepted = (
+            report.get("verdict") == "pass"
+            and report.get("recommended_action") == "advance"
+            and not report.get("human_review_required")
+            and not report.get("permission_escalation_required")
+        )
+        for record in records.values():
+            record.integration_report_ref = report_ref.uri
+            record.integration_decision = report
+            record.human_review_required = bool(report.get("human_review_required"))
+            record.permission_escalation_required = bool(
+                report.get("permission_escalation_required")
+            )
+            if record.status == PHASE_E_BRANCH_READY:
+                record.status = "NODE_ACCEPTED" if accepted else "NODE_BLOCKED"
+                record.final_state = (
+                    NodeState.NODE_ACCEPTED.value
+                    if accepted
+                    else NodeState.NODE_REJECTED.value
+                )
+                if not accepted:
+                    record.failure_code = str(
+                        report.get("failure_type") or "phase_e_integration_blocked"
+                    )
+        event = {
+            "report": report,
+            "report_ref": to_plain_dict(report_ref),
+            "accepted": accepted,
+        }
+        self._record(run_id, spec.graph_id, "PhaseEIntegrationGateCompleted", event)
+        return event
+
+    def _deterministic_phase_e_integration_review(
+        self,
+        spec: GraphRunSpec,
+        records: dict[str, GraphNodeRecord],
+        packet: dict[str, Any],
+    ) -> dict[str, Any]:
+        branch_records = [
+            record for record in records.values() if record.status == PHASE_E_BRANCH_READY
+        ]
+        missing = [
+            record.node_id
+            for record in records.values()
+            if record.status != PHASE_E_BRANCH_READY
+        ]
+        permission_nodes = [
+            record.node_id
+            for record in branch_records
+            if record.overlooker_recommended_action == "request_permission_review"
+        ]
+        human_nodes = [
+            record.node_id
+            for record in branch_records
+            if record.overlooker_recommended_action == "require_human_review"
+        ]
+        second_needed = [
+            record.node_id
+            for record in branch_records
+            if record.high_risk and not record.second_overlooker_report_ref
+        ]
+        if permission_nodes:
+            verdict = "blocked"
+            action = "request_permission_review"
+            failure_type = "permission_review_required"
+        elif human_nodes:
+            verdict = "blocked"
+            action = "require_human_review"
+            failure_type = "human_review_required"
+        elif second_needed:
+            verdict = "blocked"
+            action = "require_second_overlooker"
+            failure_type = "second_overlooker_required"
+        elif missing:
+            verdict = "blocked"
+            action = "require_human_review"
+            failure_type = "missing_branch_candidate"
+        else:
+            verdict = "pass"
+            action = "advance"
+            failure_type = None
+        return {
+            "schema": "egtc.phase_e.integration_overlooker_report.v1",
+            "overlooker_id": f"integration-overlooker-{uuid.uuid4().hex[:12]}",
+            "verdict": verdict,
+            "recommended_action": action,
+            "failure_type": failure_type,
+            "rationale": (
+                "All serial branch candidates completed and can be integrated."
+                if verdict == "pass"
+                else "Phase E integration is blocked by overlooker-owned review requirements."
+            ),
+            "branch_candidate_refs": [
+                record.branch_candidate_ref
+                for record in branch_records
+                if record.branch_candidate_ref
+            ],
+            "permission_escalation_required": bool(permission_nodes),
+            "human_review_required": bool(human_nodes or missing),
+            "second_overlooker_required_for": second_needed,
+            "permission_review_required_for": permission_nodes,
+            "human_review_required_for": human_nodes,
+            "packet": packet,
+        }
+
+    def _codex_phase_e_integration_review(
+        self,
+        run_id: str,
+        spec: GraphRunSpec,
+        packet: dict[str, Any],
+    ) -> dict[str, Any]:
+        workspace = self.root / "runs" / run_id / "phase-e-integration-overlooker"
+        workspace.mkdir(parents=True, exist_ok=True)
+        (workspace / "integration_packet.json").write_text(
+            json.dumps(packet, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        node = NodeCapsule(
+            node_id=f"{spec.graph_id}-phase-e-integration-overlooker",
+            phase="Phase E Integration Overlooker",
+            goal="Review all branch candidates after serial nodes complete and decide integration, permission review, or human review.",
+            command=[],
+            acceptance_criteria=[
+                "Integration Overlooker must review every branch_candidate_ref.",
+                "Permission escalation and human review requests belong to the Overlooker.",
+                "Director must not be used for realtime arbitration.",
+            ],
+            required_evidence=["log", "sandbox_events", "resource_report"],
+            executor_kind="codex_cli",
+            prompt=self._phase_e_integration_prompt(),
+            sandbox_profile={
+                "backend": "codex_native",
+                "sandbox_mode": "workspace_write",
+                "network": "none",
+                "allowed_read_paths": ["."],
+                "allowed_write_paths": ["."],
+                "resource_limits": {
+                    "wall_time_sec": 240,
+                    "memory_mb": 1024,
+                    "disk_mb": 512,
+                    "max_processes": 48,
+                    "max_command_count": 1,
+                },
+            },
+        )
+        result = self.wrapper.run(node, workspace, role="overlooker", run_id=run_id)
+        report = self._read_integration_report(
+            workspace / "integration_overlooker_report.json"
+        )
+        report.setdefault("overlooker_id", result.worker_id)
+        report.setdefault("codex_exit_code", result.exit_code)
+        report.setdefault(
+            "codex_event_refs", [to_plain_dict(ref) for ref in result.event_refs]
+        )
+        if result.exit_code != 0 and report.get("verdict") == "pass":
+            report["verdict"] = "blocked"
+            report["recommended_action"] = "require_human_review"
+            report["human_review_required"] = True
+            report["failure_type"] = "integration_overlooker_failed"
+        return report
+
+    def _phase_e_integration_prompt(self) -> str:
+        return """
+You are the EGTC-PAW Phase E Integration Overlooker.
+
+Read ./integration_packet.json and create ./integration_overlooker_report.json.
+
+Output strict JSON:
+{
+  "verdict": "pass" | "blocked" | "uncertain",
+  "recommended_action": "advance" | "request_permission_review" | "require_human_review" | "require_second_overlooker",
+  "failure_type": null | "permission_review_required" | "human_review_required" | "second_overlooker_required" | "missing_branch_candidate" | "integration_overlooker_failed",
+  "rationale": "short explanation",
+  "branch_candidate_refs": ["artifact://..."],
+  "permission_escalation_required": true | false,
+  "human_review_required": true | false,
+  "permission_review_required_for": ["node-id"],
+  "human_review_required_for": ["node-id"],
+  "second_overlooker_required_for": ["node-id"]
+}
+
+Rules:
+- Do not ask Director to arbitrate realtime conflicts.
+- Every serial node should already have a branch candidate.
+- You own permission escalation and human review decisions.
+- Pass only if every branch candidate is present and no permission/human/second-overlooker requirement remains.
+- Do not clone repositories. Do not use network.
+""".strip()
+
+    def _read_integration_report(self, path: Path) -> dict[str, Any]:
+        if not path.exists():
+            return {
+                "verdict": "blocked",
+                "recommended_action": "require_human_review",
+                "failure_type": "integration_overlooker_failed",
+                "rationale": "Integration Overlooker did not create integration_overlooker_report.json.",
+                "branch_candidate_refs": [],
+                "permission_escalation_required": False,
+                "human_review_required": True,
+                "permission_review_required_for": [],
+                "human_review_required_for": [],
+                "second_overlooker_required_for": [],
+            }
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            return {
+                "verdict": "blocked",
+                "recommended_action": "require_human_review",
+                "failure_type": "integration_overlooker_failed",
+                "rationale": f"Integration Overlooker report was not valid JSON: {exc}",
+                "branch_candidate_refs": [],
+                "permission_escalation_required": False,
+                "human_review_required": True,
+                "permission_review_required_for": [],
+                "human_review_required_for": [],
+                "second_overlooker_required_for": [],
+            }
+        return data if isinstance(data, dict) else {
+            "verdict": "blocked",
+            "recommended_action": "require_human_review",
+            "failure_type": "integration_overlooker_failed",
+            "rationale": "Integration Overlooker report was not a JSON object.",
+            "branch_candidate_refs": [],
+            "permission_escalation_required": False,
+            "human_review_required": True,
+            "permission_review_required_for": [],
+            "human_review_required_for": [],
+            "second_overlooker_required_for": [],
+        }
+
     def _select_fork_plan(
         self,
         run_id: str,
@@ -1493,7 +1869,7 @@ Rules:
         candidates = [
             parent_id
             for parent_id in record.depends_on
-            if records[parent_id].status == "NODE_ACCEPTED"
+            if records[parent_id].status in {"NODE_ACCEPTED", PHASE_E_BRANCH_READY}
             and records[parent_id].accepted_workspace
         ]
         source_node_id: str | None = None
@@ -1715,14 +2091,26 @@ Rules:
             raise ValueError("Workflow graph must be a DAG")
         return ordered
 
-    def _next_runnable(self, records: dict[str, GraphNodeRecord]) -> str | None:
+    def _next_runnable(
+        self,
+        spec: GraphRunSpec,
+        records: dict[str, GraphNodeRecord],
+    ) -> str | None:
         for node_id in sorted(records):
             record = records[node_id]
             if record.status != "NODE_PLANNED":
                 continue
-            if all(records[parent].status == "NODE_ACCEPTED" for parent in record.depends_on):
+            if all(
+                self._dependency_satisfied(spec, records[parent].status)
+                for parent in record.depends_on
+            ):
                 return node_id
         return None
+
+    def _dependency_satisfied(self, spec: GraphRunSpec, status: str) -> bool:
+        if status == "NODE_ACCEPTED":
+            return True
+        return self._phase_e_enabled(spec.phase, spec.overlooker_mode) and status == PHASE_E_BRANCH_READY
 
     def _can_start(
         self,
@@ -1752,11 +2140,21 @@ Rules:
                 )
 
     def _all_terminal(self, records: dict[str, GraphNodeRecord]) -> bool:
-        return all(record.status in TERMINAL_STATUSES for record in records.values())
+        return all(
+            record.status in TERMINAL_STATUSES or record.status == PHASE_E_BRANCH_READY
+            for record in records.values()
+        )
+
+    def _ready_for_phase_e_integration(self, records: dict[str, GraphNodeRecord]) -> bool:
+        return bool(records) and all(
+            record.status == PHASE_E_BRANCH_READY for record in records.values()
+        )
 
     def _graph_status(self, records: dict[str, GraphNodeRecord]) -> str:
         if all(record.status == "NODE_ACCEPTED" for record in records.values()):
             return "accepted"
+        if all(record.status == PHASE_E_BRANCH_READY for record in records.values()):
+            return "integration_pending"
         if any(record.status == "NODE_ABORTED" for record in records.values()):
             return "aborted"
         if any(record.status == "NODE_BLOCKED" for record in records.values()):
@@ -1862,6 +2260,7 @@ Rules:
             "replan_budget": spec.replan_budget,
             "phase": spec.phase,
             "second_overlooker_mode": spec.second_overlooker_mode,
+            "integration_overlooker_mode": spec.integration_overlooker_mode,
         }
 
     def _spec_from_checkpoint(self, checkpoint: dict[str, Any]) -> GraphRunSpec:
@@ -1879,6 +2278,7 @@ Rules:
             replan_budget=int(raw.get("replan_budget", 0)),
             phase=str(raw.get("phase", "D")),
             second_overlooker_mode=str(raw.get("second_overlooker_mode", "deterministic")),
+            integration_overlooker_mode=str(raw.get("integration_overlooker_mode", "deterministic")),
         )
 
     def _node_from_plain(self, raw: dict[str, Any]) -> NodeCapsule:

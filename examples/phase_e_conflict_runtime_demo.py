@@ -72,27 +72,32 @@ def main() -> int:
     )
     result = runtime.run_graph(spec, run_id="phase-e-conflict-demo")
     node = result["nodes"]["release-check"]
-    resolution = node["conflict_resolution"] or {}
+    integration = result["integration_result"] or {}
+    integration_report = integration.get("report") or {}
     report = {
         "accepted": result["accepted"],
         "status": result["status"],
         "node_status": node["status"],
         "high_risk": node["high_risk"],
         "second_overlooker_report_ref": node["second_overlooker_report_ref"],
+        "branch_candidate_ref": node["branch_candidate_ref"],
+        "integration_report_ref": node["integration_report_ref"],
+        "integration_verdict": integration_report.get("verdict"),
+        "integration_action": integration_report.get("recommended_action"),
         "conflict_history_len": len(node["conflict_history"]),
-        "resolution_decision": resolution.get("decision"),
-        "resolution_priority": resolution.get("priority"),
-        "release_node": resolution.get("release_node"),
+        "conflict_resolution": node["conflict_resolution"],
     }
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if (
         report["accepted"]
         and report["high_risk"]
         and report["second_overlooker_report_ref"]
-        and report["conflict_history_len"] == 1
-        and report["resolution_decision"] == "accepted"
-        and report["resolution_priority"] == "overlooker_consensus"
-        and report["release_node"]
+        and report["branch_candidate_ref"]
+        and report["integration_report_ref"]
+        and report["integration_verdict"] == "pass"
+        and report["integration_action"] == "advance"
+        and report["conflict_history_len"] == 0
+        and report["conflict_resolution"] is None
     ) else 1
 
 

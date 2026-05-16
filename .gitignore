@@ -20,6 +20,11 @@ phased_graph_data/
 phased_graph_negative_data/
 phased_codex_retry_fork_data/
 phasee_conflict_data/
+phasee_branch_integration_data/
+phasee_dynamic_replan_data/
+phasee_patch_apply_data/
+phasee_codex_director_patch_data/
+phasee_overlooker_review_request_data/
 phasef_codex_director_data/
 phasef_experience_catalog_seed_tmp/
 phasef_experience_catalog_demo_data/

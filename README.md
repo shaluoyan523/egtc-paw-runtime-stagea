@@ -118,7 +118,9 @@ This launches `codex exec --json` for the retrying worker node, the Codex Overlo
 Run the Phase E conflict arbitration demo:
 
 ```bash
+python3 examples/phase_e_branch_integration_demo.py
 python3 examples/phase_e_conflict_runtime_demo.py
+python3 examples/phase_e_overlooker_review_request_demo.py
 ```
 
 Run the Phase E GraphPatch compiler checks:
@@ -127,7 +129,7 @@ Run the Phase E GraphPatch compiler checks:
 python3 examples/phase_e_graph_patch_compiler_demo.py
 ```
 
-Phase E adds high-risk node handling, a second Overlooker gate, `DecisionConflict` / `ConflictResolution`, human-review and permission-review placeholders, and Phase E compiler validation for advanced GraphPatch operations.
+Phase E adds branch-candidate integration: each serial agent completes its own branch workspace first, then a final integration Overlooker gates acceptance. Permission-review and human-review requests are decided by the Overlooker rather than by realtime Director arbitration.
 
 Run the Phase F experience-library demos:
 
@@ -182,10 +184,11 @@ Phase D adds:
 Phase E adds:
 
 - `DecisionConflict` and `ConflictResolution` schemas.
-- `ConflictResolver` with policy / deterministic validator > Overlooker consensus > Director preference priority.
+- Branch candidates for serial agent outputs before unified integration.
 - High-risk node detection from phase and sandbox profile.
-- Second Overlooker review before releasing high-risk nodes.
-- Human-review and permission-escalation placeholders.
+- Second Overlooker branch gate before high-risk candidates enter integration.
+- Overlooker-owned human-review and permission-escalation decisions.
+- Deferred integration gate after serial nodes finish, instead of realtime Director conflict arbitration.
 - Phase E GraphPatch compiler validation for `insert_node`, `split_node`, `replace_worker`, `add_edge`, `remove_edge`, and `update_join_policy`.
 
 Phase F adds:

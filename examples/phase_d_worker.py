@@ -15,6 +15,8 @@ def main() -> int:
     poison_on_fail = "--poison-on-fail" in sys.argv
     fail_if_poisoned = "--fail-if-poisoned" in sys.argv
     request_replan_once = "--request-replan-once" in sys.argv
+    request_permission_review = "--request-permission-review" in sys.argv
+    require_human_review = "--require-human-review" in sys.argv
 
     time.sleep(delay)
     runtime_attempt_path = Path(".egtc_attempt.json")
@@ -67,6 +69,27 @@ def main() -> int:
             )
         )
         return 2
+
+    if request_permission_review:
+        Path("overlooker_hint.json").write_text(
+            json.dumps(
+                {
+                    "recommended_action": "request_permission_review",
+                    "failure_type": "permission_review_required",
+                }
+            ),
+            encoding="utf-8",
+        )
+    elif require_human_review:
+        Path("overlooker_hint.json").write_text(
+            json.dumps(
+                {
+                    "recommended_action": "require_human_review",
+                    "failure_type": "human_review_required",
+                }
+            ),
+            encoding="utf-8",
+        )
 
     Path(f"{node_id}_{role}.txt").write_text(
         f"{node_id} {role} completed on runtime attempt {runtime_attempt}\n",

@@ -4,10 +4,11 @@ from .models import ConflictResolution, DecisionConflict
 
 
 class ConflictResolver:
-    """Phase E conflict resolver.
+    """Legacy conflict resolver for explicit offline conflict records.
 
-    Priority order is intentionally simple and auditable:
-    policy / deterministic validator > Overlooker consensus > Director preference.
+    The Phase E runtime no longer calls this as a realtime Director arbitration
+    path; serial node outputs are first recorded as branch candidates and then
+    released or blocked by the integration Overlooker.
     """
 
     def resolve(self, conflict: DecisionConflict) -> ConflictResolution:
